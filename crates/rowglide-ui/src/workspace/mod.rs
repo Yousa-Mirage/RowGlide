@@ -3,6 +3,9 @@
 mod controls;
 mod inspector;
 mod query;
+mod state;
+
+use state::{TabMode, TabState};
 
 use crate::table::{Grid, GridEvents, SortRequested};
 use arrow_array::ArrayRef;
@@ -12,14 +15,15 @@ use gpui_kit::component::{
     table::{DataTable, TableEvent, TableState},
 };
 use gpui_kit::*;
-use rowglide_app::{Backend, Cancellation, Query, Source};
+use rowglide_app::{Backend, Cancellation, Query};
 use std::{collections::HashSet, sync::Arc};
 
 /// Owns view state and coordinates background queries.
 pub(crate) struct Workspace {
     // Dataset and active query.
     backend: Arc<dyn Backend>,
-    sources: Vec<Source>,
+    tabs: Vec<TabState>,
+    active_tab: usize,
     query: Query,
 
     // Persistent GPUI controls and subscriptions.
@@ -58,6 +62,7 @@ impl Workspace {
                     loading: true,
                     sort: None,
                     events: events.clone(),
+                    sortable: true,
                 },
                 window,
                 cx,
@@ -78,8 +83,11 @@ impl Workspace {
                 &events,
                 window,
                 |this, _, event: &SortRequested, window, cx| {
-                    this.query.sort = event.0;
-                    this.query.sql = None;
+                    if this.active_tab().mode == TabMode::Sql {
+                        return;
+                    }
+                    this.active_tab_mut().browse.sort = event.0;
+                    this.query = this.active_tab().active_query();
 
                     this.run(window, cx);
                 },
@@ -103,9 +111,10 @@ impl Workspace {
         ];
 
         let mut this = Self {
-            sources: backend.sources(),
-            backend,
+            tabs: backend.sources().into_iter().map(TabState::new).collect(),
+            active_tab: 0,
             query: Query::default(),
+            backend,
             table,
             search,
             limit,
@@ -123,8 +132,34 @@ impl Workspace {
             expanded: HashSet::new(),
         };
 
-        this.run(window, cx);
+        if !this.tabs.is_empty() {
+            this.query = this.active_tab().active_query();
+            this.run(window, cx);
+        }
         this
+    }
+
+    fn active_tab(&self) -> &TabState {
+        &self.tabs[self.active_tab]
+    }
+
+    fn active_tab_mut(&mut self) -> &mut TabState {
+        &mut self.tabs[self.active_tab]
+    }
+
+    pub(super) fn sync_controls_from_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let tab = self.active_tab();
+        self.search.update(cx, |state, cx| {
+            state.set_value(tab.drafts.search.clone(), window, cx)
+        });
+        self.limit.update(cx, |state, cx| {
+            state.set_value(tab.drafts.limit.clone(), window, cx)
+        });
+        self.offset.update(cx, |state, cx| {
+            state.set_value(tab.drafts.offset.clone(), window, cx)
+        });
+        self.sql
+            .update(cx, |state, cx| state.set_value(tab.sql.clone(), window, cx));
     }
 }
 
@@ -136,6 +171,9 @@ impl Drop for Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.tabs.is_empty() {
+            return div().child("No files open").into_any_element();
+        }
         let mut content = div()
             .flex_1()
             .min_w_0()
@@ -179,5 +217,6 @@ impl Render for Workspace {
                     .child(self.render_tabs(cx)),
             )
             .child(content)
+            .into_any_element()
     }
 }

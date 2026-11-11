@@ -37,12 +37,19 @@ Queries run off the UI thread, with cancellation and stale-result rejection. Pre
 - `main.rs`: native startup and backend injection.
 - `workspace/mod.rs`: shared view state, event wiring, and main layout.
 - `workspace/controls.rs`: file tabs, browse toolbar, SQL editor, and status bar.
-- `workspace/query.rs`: input validation, query execution, and cancellation.
+- `workspace/query.rs`: query execution, cancellation, and session switching.
+- `workspace/state.rs`: per-file browse/SQL state and bounded result cache.
 - `workspace/inspector.rs`: selected-cell panel and nested-value tree.
 - `table.rs`: virtualized table delegate and sort events.
 - `cells.rs`: Arrow value summaries and nested-value access.
 
-Workspace owns the shared state; its child modules implement focused methods.
+Workspace owns shared GUI controls and the active task. Each `TabState` retains
+browse inputs, SQL drafts, mode, results and inspector state. Switching a tab or
+mode cancels pending work and restores its session. SQL mode disables browse
+filters and column sorting. Up to three inactive previews are retained alongside
+the active preview, each bounded to 8,192 rows / 16 MiB. Eviction keeps inputs;
+use **Reload result** to rerun the last applied query. Scroll positions, column
+widths and editor undo history are not yet saved per tab.
 Table rendering and cell helpers remain independent of workspace coordination.
 
 ## Checks

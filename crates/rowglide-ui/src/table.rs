@@ -14,6 +14,7 @@ pub(crate) struct SortRequested(pub(crate) Option<Sort>);
 pub(crate) struct Grid {
     pub(crate) preview: Option<Preview>,
     pub(crate) loading: bool,
+    pub(crate) sortable: bool,
     pub(crate) sort: Option<Sort>,
     pub(crate) events: Entity<GridEvents>,
 }
@@ -54,7 +55,7 @@ impl TableDelegate for Grid {
         .movable(false);
 
         // Only the first five scalar columns support sorting in the mock schema.
-        if index < 5 {
+        if self.sortable && index < 5 {
             column = column.sort(match self.sort.filter(|sort| sort.column == index) {
                 Some(sort) if sort.descending => ColumnSort::Descending,
                 Some(_) => ColumnSort::Ascending,
@@ -67,12 +68,14 @@ impl TableDelegate for Grid {
 
     fn perform_sort(
         &mut self,
-
         column: usize,
         sort: ColumnSort,
         _: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
+        if !self.sortable {
+            return;
+        }
         let sort = match sort {
             ColumnSort::Ascending => Some(Sort {
                 column,
@@ -140,6 +143,10 @@ impl TableDelegate for Grid {
             .items_center()
             .justify_center()
             .text_color(cx.theme().muted_foreground)
-            .child("No rows to display · try a different filter")
+            .child(if self.sortable {
+                "No rows to display · try a different filter"
+            } else {
+                "No SQL rows to display · run a query"
+            })
     }
 }

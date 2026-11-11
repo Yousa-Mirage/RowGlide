@@ -1,8 +1,8 @@
 //! File navigation, browse controls, SQL editor, and status bar.
 
-use super::Workspace;
+use super::{TabMode, Workspace};
 use gpui_kit::component::{
-    ActiveTheme, Sizable,
+    ActiveTheme, Disableable, Sizable,
     button::{Button, ButtonVariants},
     input::{Editor, Input},
     tab::{Tab, TabBar},
@@ -12,41 +12,25 @@ use gpui_kit::*;
 use rowglide_app::Query;
 
 impl Workspace {
-    // File tabs reset browse controls when switching datasets.
+    // File tabs restore the selected file session.
     pub(super) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         TabBar::new("open-file-tabs")
             .folder()
-            .selected_index(
-                self.sources
-                    .iter()
-                    .position(|source| source.id == self.query.source)
-                    .unwrap_or(0),
-            )
+            .selected_index(self.active_tab)
             .children(
-                self.sources
+                self.tabs
                     .iter()
-                    .map(|source| Tab::new().label(source.name.clone())),
+                    .map(|tab| Tab::new().label(tab.source.name.clone())),
             )
-            .on_click(cx.listener(|this, index: &usize, window, cx| {
-                let Some(source) = this.sources.get(*index) else {
-                    return;
-                };
-                if source.id == this.query.source {
-                    return;
-                }
-                this.query = Query {
-                    source: source.id,
-                    ..Default::default()
-                };
-                this.reset_inputs(window, cx);
-
-                this.run(window, cx);
-            }))
+            .on_click(
+                cx.listener(|this, index: &usize, window, cx| this.switch_tab(*index, window, cx)),
+            )
     }
 
     // Compact browse controls and SQL panel toggle.
     pub(super) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = rgb(0xe4e8e7);
+        let sql_mode = self.active_tab().mode == TabMode::Sql;
         div()
             .px_5()
             .py_2()
@@ -61,26 +45,27 @@ impl Workspace {
                     .flex_1()
                     .min_w(px(160.))
                     .max_w(px(320.))
-                    .child(Input::new(&self.search).small()),
+                    .child(Input::new(&self.search).small().disabled(sql_mode)),
             )
             .child(div().text_xs().child("Limit"))
             .child(
                 div()
                     .w(px(80.))
                     .flex_shrink_0()
-                    .child(Input::new(&self.limit).small()),
+                    .child(Input::new(&self.limit).small().disabled(sql_mode)),
             )
             .child(div().text_xs().child("Offset"))
             .child(
                 div()
                     .w(px(80.))
                     .flex_shrink_0()
-                    .child(Input::new(&self.offset).small()),
+                    .child(Input::new(&self.offset).small().disabled(sql_mode)),
             )
             .child(
                 Button::new("filter")
                     .small()
                     .label("Apply")
+                    .disabled(sql_mode)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.apply_filter(window, cx);
                     })),
@@ -90,11 +75,13 @@ impl Workspace {
                     .small()
                     .ghost()
                     .label("Reset")
+                    .disabled(sql_mode)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.query = Query {
                             source: this.query.source,
                             ..Default::default()
                         };
+                        this.active_tab_mut().browse = this.query.clone();
                         this.reset_inputs(window, cx);
 
                         this.run(window, cx);
@@ -104,11 +91,8 @@ impl Workspace {
             .child(
                 Button::new("sql-toggle")
                     .small()
-                    .label(if self.sql_open { "Hide SQL" } else { "SQL" })
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.sql_open = !this.sql_open;
-                        cx.notify();
-                    })),
+                    .label(if self.sql_open { "Browse" } else { "SQL" })
+                    .on_click(cx.listener(|this, _, window, cx| this.switch_mode(window, cx))),
             )
     }
 
@@ -120,11 +104,7 @@ impl Workspace {
                     .child(div().text_xs().text_color(cx.theme().muted_foreground).child("SQL · DEMO PRESETS ONLY"))
                     .child(Button::new("run").small().primary().label("Run query")
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.query.search.clear();
-                            this.search.update(cx, |state, cx| state.set_value("", window, cx));
-                            this.query.sort = None;
-                            this.query.sql = Some(this.sql.read(cx).value().to_string());
-                            this.run(window, cx);
+                            this.run_sql(window, cx);
                         }))),
             )
             .child(Editor::new(&self.sql).h(px(95.)))
@@ -153,7 +133,28 @@ impl Workspace {
                     } else {
                         rgb(0x6c7b73)
                     })
-                    .child(self.status.clone()),
+                    .child(format!(
+                        "{} · {}",
+                        if self.sql_open { "SQL" } else { "Browse" },
+                        self.status
+                    )),
+            )
+            .when(
+                !self.busy
+                    && self.table.read(cx).delegate().preview.is_none()
+                    && (!self.sql_open || self.active_tab().last_sql.is_some()),
+                |s| {
+                    s.child(
+                        Button::new("reload-result")
+                            .small()
+                            .ghost()
+                            .label("Reload result")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.query = this.active_tab().active_query();
+                                this.run(window, cx);
+                            })),
+                    )
+                },
             )
             .when(self.busy, |s| {
                 s.child(
