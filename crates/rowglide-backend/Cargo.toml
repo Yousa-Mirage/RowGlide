@@ -1,0 +1,10 @@
+[package]
+name = "rowglide-backend"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+rowglide-core.workspace = true
+arrow-array.workspace = true
+arrow-schema.workspace = true

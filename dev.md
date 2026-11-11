@@ -6,9 +6,9 @@
 
 已确认：Rust、GPUI + gpui-kit、Cargo workspace、jj 版本管理；先开发 UI，再接入真实数据后端。使用三个 crate，程序入口位于 UI crate。
 
-待验证：gpui-kit 的上游与兼容版本、首发目标平台、真实引擎选型与打包方式。DuckDB 暂列首选，DataFusion 保留为候选，不在第一版同时实现两者。
+已核实：gpui-kit 0.9.1 来自 https://github.com/longbridge/gpui-kit ，Apache-2.0 许可，统一提供 GPUI、组件及资源；当前在 macOS Apple Silicon 开发验证。待验证：正式支持的平台范围、真实引擎选型与发布打包方式。DuckDB 暂列首选，DataFusion 保留为候选，不在第一版同时实现两者。
 
-本文件是开发计划，不表示功能已经完成。当前仅完成架构和路线约定，尚未建立 Rust workspace。
+已建立 Rust workspace 和第一版模拟数据 UI。下面的阶段验收仍按完整目标跟踪，不能将原型能力视为全部完成。
 
 ## 架构
 
@@ -145,10 +145,35 @@ crates/
 每阶段完成后更新下方记录，并附实际验证结果。尚未完成的阶段不提前勾选。
 
 - [x] 架构、依赖方向、开发路线与 jj 约定
-- [ ] 阶段 0：可运行骨架
+- [x] 阶段 0：可运行骨架
 - [ ] 阶段 1：模拟数据表格
 - [ ] 阶段 2：嵌套查看器
 - [ ] 阶段 3：排序、筛选和任务控制
 - [ ] 阶段 4：SQL 工作区
 - [ ] 阶段 5：真实后端
 - [ ] 阶段 6：体验与发布准备
+
+
+## 2026-11-11：首版 UI 原型
+
+已实现：
+
+- 用 `cargo new --vcs none` 初始化三个 crate，锁定 gpui-kit 0.9.1，Arrow 57.3.2；提交 Cargo.lock 保持可复现。
+- 浅色主窗口、示例文件侧栏、工具栏、状态栏；使用 Kit 的 DataTable、Input、Editor 和 Button。
+- 行列虚拟化、列宽调整、单元格选择、类型标签、List / Struct 展开查看。
+- 示例全集排序（空值始终排末）、姓名 / 城市搜索筛选、两种 SQL 预设及无效 SQL 错误。
+- 后台查询、取消 token、请求代次过滤；拉取式批次接口，预览限制为 8,192 行 / 16 MiB。
+- macOS 本地开发 bundle 脚本，不安装或签名。
+
+验证：`cargo fmt --all -- --check`、`cargo check --workspace`、`cargo test --workspace`（2 个后端行为测试）和 `cargo clippy --workspace --all-targets -- -D warnings` 通过。已实际启动 macOS 窗口，查看首屏、SQL 100 行结果、单元格选择和列表展开。排序全集与空值顺序、取消、空 schema、非法 SQL 由测试覆盖。
+
+观察到的限制：当前 macOS 27.2 自动化环境中，辅助功能树状态有时先于截图更新，窗口置前后能看到新画面。尚未确认是截图采集还是原生呈现延迟，不能视为已修复。后续需在普通手动使用与最小 GPUI 示例中对照验证。尚未完成鼠标全流程、列宽拖动和快速取消的全面视觉验收。
+
+下一步：
+
+1. 排查上述呈现延迟，补充交互与窄窗口验收；将主界面布局进一步拆分成独立组件。
+2. 完善长文本、日期、宽表、多层嵌套、MAP 和 CSV JSON 示例；支持复制、长列表虚拟化和完整值查看。目前嵌套列表最多展开 200 项、深度限制 12，仍是原型。
+3. 将有限首屏预览扩展成有界缓存及按需加载；加入类型化条件编辑器、错误 / 延迟注入和确定性过期结果测试。
+4. 完成 SQL 快捷键和浏览 / SQL 结果状态隔离后，再按阶段 5 评估真实后端。当前不支持真实文件读取或任意 SQL。
+
+启动：`cargo run -p rowglide-ui --bin rowglide`；本地 macOS bundle：`sh scripts/bundle-macos.sh` 后打开 `target/Rowglide.app`。
