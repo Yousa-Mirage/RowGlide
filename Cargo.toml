@@ -1,18 +1,32 @@
 [workspace]
-members = ["crates/rowglide-core", "crates/rowglide-backend", "crates/rowglide-ui"]
+members = ["crates/rowglide-app", "crates/rowglide-core", "crates/rowglide-ui"]
 resolver = "3"
 
 [workspace.package]
+description = "A native Parquet and CSV data browser built with Rust and GPUI Kit"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.99"
+authors = ["Yousa-Mirage <Yousa-Mirage@foxmail.com>"]
+license = "Apache-2.0"
+repository = "https://github.com/Yousa-Mirage/RowGlide"
+homepage = "https://github.com/Yousa-Mirage/RowGlide"
+readme = "README.md"
+keywords = ["parquet", "csv", "arrow", "gpui", "data-viewer"]
+categories = ["visualization", "gui"]
 publish = false
 
 [workspace.dependencies]
+rowglide-app = { path = "crates/rowglide-app" }
 rowglide-core = { path = "crates/rowglide-core" }
-rowglide-backend = { path = "crates/rowglide-backend" }
 gpui-kit = "=0.9.1"
 arrow-array = "57"
 arrow-schema = "57"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_qualifications = "deny"
+unreachable_pub = "deny"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"
@@ -20,3 +34,9 @@ expect_used = "deny"
 
 [profile.dev]
 debug = 0
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

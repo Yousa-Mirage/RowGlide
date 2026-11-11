@@ -13,19 +13,19 @@ Rowglide 是使用 Rust、GPUI 和 gpui-kit 构建的桌面 Parquet / CSV 查看
 采用三个 crate，程序入口合并到 UI：
 
 ```text
-crates/rowglide-core/       核心模型、请求、结果及后端接口
+crates/rowglide-app/        核心模型、请求、结果及后端接口
 crates/rowglide-ui/         GPUI 界面、交互状态及程序入口
-crates/rowglide-backend/    模拟后端和后续真实后端
+crates/rowglide-core/       模拟后端和后续真实后端
 
-rowglide-ui -> rowglide-backend -> rowglide-core
-rowglide-ui --------------------> rowglide-core
+rowglide-ui -> rowglide-core -> rowglide-app
+rowglide-ui ------------------> rowglide-app
 ```
 
-- `core` 不依赖 GPUI、gpui-kit 或具体查询引擎；可以依赖 Arrow。
-- `backend` 不依赖 UI，不持有 GUI 对象。
-- `ui` 的入口负责构造并注入后端。组件和交互逻辑通过 `core` 接口工作，不直接调用具体引擎。
+- `app` 不依赖 GPUI、gpui-kit 或具体查询引擎；可以依赖 Arrow。
+- `core` 不依赖 UI，不持有 GUI 对象。
+- `ui` 的入口负责构造并注入后端。组件和交互逻辑通过 `app` 接口工作，不直接调用具体引擎。
 - 打开的文件使用 gpui-kit Folder Tabs 在顶部展示与切换，不使用左侧文件侧栏。
-- 包之间不得出现循环依赖。不要另建 app crate，除非开发需求发生明确变化。
+- 包之间不得出现循环依赖。`app` 存放共享模型与接口，程序入口仍位于 `ui`。
 - 实现前核实 gpui-kit 的实际上游地址、API、版本和平台支持，不用其他组件库静默替代。
 
 ## 数据与交互约定
@@ -67,3 +67,5 @@ rowglide-ui --------------------> rowglide-core
 - 使用 `just dev` 启动开发程序，`just test` 运行测试，`just lint` 执行 Clippy，`just ci` 执行完整本地检查；`just` 列出所有命令。
 - 项目代码和测试均禁止调用 `.unwrap()` 与 `.expect()`。通过 workspace Clippy lints 强制执行，各 crate 必须继承 `[lints] workspace = true`，不得用局部 allow 绕过。
 - Clippy 使用 `--workspace --all-targets -- -D warnings`，所有警告视为错误。可恢复错误通过 Result 传播或明确处理，不能只将 unwrap / expect 改写为 panic。
+
+- Workspace Rust lints 禁止 `unsafe_code`（forbid）、`unused_qualifications` 和 `unreachable_pub`（deny）；UI 内部共享项使用 `pub(crate)`，不通过 allow 绕过。

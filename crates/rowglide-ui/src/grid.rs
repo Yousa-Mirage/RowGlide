@@ -4,17 +4,17 @@ use gpui_kit::component::{
     table::{Column, ColumnSort, TableDelegate, TableState},
 };
 use gpui_kit::*;
-use rowglide_core::{Preview, Sort};
+use rowglide_app::{Preview, Sort};
 
 #[derive(Clone)]
-pub struct SortRequested(pub Option<Sort>);
-pub struct Grid {
-    pub preview: Option<Preview>,
-    pub loading: bool,
-    pub sort: Option<Sort>,
-    pub events: Entity<GridEvents>,
+pub(crate) struct SortRequested(pub(crate) Option<Sort>);
+pub(crate) struct Grid {
+    pub(crate) preview: Option<Preview>,
+    pub(crate) loading: bool,
+    pub(crate) sort: Option<Sort>,
+    pub(crate) events: Entity<GridEvents>,
 }
-pub struct GridEvents;
+pub(crate) struct GridEvents;
 impl EventEmitter<SortRequested> for GridEvents {}
 impl TableDelegate for Grid {
     fn columns_count(&self, _: &App) -> usize {

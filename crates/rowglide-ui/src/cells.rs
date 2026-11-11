@@ -2,7 +2,7 @@ use arrow_array::{
     Array, ArrayRef, BooleanArray, Float64Array, Int64Array, ListArray, StringArray, StructArray,
 };
 
-pub fn summary(array: &ArrayRef, row: usize) -> String {
+pub(crate) fn summary(array: &ArrayRef, row: usize) -> String {
     if row >= array.len() {
         return String::new();
     }
@@ -29,7 +29,8 @@ pub fn summary(array: &ArrayRef, row: usize) -> String {
     }
     format!("{:?}", array.data_type())
 }
-pub fn children(array: &ArrayRef, row: usize) -> Vec<(String, ArrayRef, usize)> {
+
+pub(crate) fn children(array: &ArrayRef, row: usize) -> Vec<(String, ArrayRef, usize)> {
     if array.is_null(row) {
         return vec![];
     }
@@ -50,7 +51,7 @@ pub fn children(array: &ArrayRef, row: usize) -> Vec<(String, ArrayRef, usize)> 
     vec![]
 }
 
-pub fn type_label(data_type: &arrow_schema::DataType) -> &'static str {
+pub(crate) fn type_label(data_type: &arrow_schema::DataType) -> &'static str {
     use arrow_schema::DataType;
     match data_type {
         DataType::Utf8 => "Text",

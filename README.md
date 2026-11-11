@@ -26,8 +26,8 @@ Queries run off the UI thread, with cancellation and stale-result rejection. Pre
 
 ## Workspace
 
-- `rowglide-core`: typed Arrow results, query contracts and cancellation.
-- `rowglide-backend`: deterministic mock backend and pull-based batches.
+- `rowglide-app`: typed Arrow results, query contracts and cancellation.
+- `rowglide-core`: deterministic mock backend and pull-based batches.
 - `rowglide-ui`: GPUI Kit components, interactions and application entry point.
 
 ## Checks
@@ -49,3 +49,17 @@ Run `just` to list commands: `just dev`, `just check`, `just test`, `just fmt`,
 `just ci` runs formatting, compilation, tests and Clippy. Workspace Clippy rules
 ban `unwrap()` and `expect()` in both application and test code; `just lint`
 treats every Clippy warning as an error.
+
+## Build configuration
+
+Rust 1.99 or newer is the current supported development baseline. Project metadata is defined only in the root Cargo.toml. Each crate
+inherits build settings and strict workspace lints. Project code forbids
+unsafe code, unnecessary qualifications and unreachable public items.
+
+Build an optimized executable with `cargo build --release -p rowglide-ui`. The
+release profile uses optimization level 3, Thin LTO, one codegen unit and strips
+debug information. Panic unwinding is retained.
+
+## License
+
+Copyright 2026 Yousa-Mirage. Licensed under Apache-2.0; see [LICENSE](LICENSE).

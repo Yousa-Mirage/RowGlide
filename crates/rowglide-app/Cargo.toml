@@ -1,11 +1,11 @@
 [package]
-name = "rowglide-backend"
+name = "rowglide-app"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-rowglide-core.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true
 

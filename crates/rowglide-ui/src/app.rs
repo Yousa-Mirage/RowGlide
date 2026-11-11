@@ -12,10 +12,10 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use rowglide_core::{Backend, Cancellation, Preview, Query, Source};
+use rowglide_app::{Backend, Cancellation, Preview, Query, Source};
 use std::{collections::HashSet, sync::Arc, time::Instant};
 
-pub struct Workspace {
+pub(crate) struct Workspace {
     backend: Arc<dyn Backend>,
     sources: Vec<Source>,
     query: Query,
@@ -34,7 +34,11 @@ pub struct Workspace {
     expanded: HashSet<String>,
 }
 impl Workspace {
-    pub fn new(backend: Arc<dyn Backend>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        backend: Arc<dyn Backend>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let events = cx.new(|_| GridEvents);
         let table = cx.new(|cx| {
             TableState::new(

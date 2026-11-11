@@ -20,7 +20,7 @@ rowglide-ui
       │                         │
       │ 核心接口                │ 仅入口组装
       ▼                         ▼
-rowglide-core <---------- rowglide-backend
+rowglide-app <---------- rowglide-core
   文件与 schema 信息        MockBackend
   排序/筛选/查询请求         后续真实引擎实现
   批次结果与任务状态         文件读取与查询执行
@@ -31,8 +31,8 @@ rowglide-core <---------- rowglide-backend
 ```text
 Cargo.toml
 crates/
-  rowglide-core/src/{lib.rs, model.rs, query.rs, backend.rs}
-  rowglide-backend/src/{lib.rs, mock.rs}
+  rowglide-app/src/{lib.rs, model.rs, query.rs, backend.rs}
+  rowglide-core/src/{lib.rs, mock.rs}
   rowglide-ui/src/{main.rs, lib.rs, app.rs}
   rowglide-ui/src/components/
   rowglide-ui/src/state/
@@ -63,7 +63,7 @@ crates/
 - 启动窗口并挂载基本布局；入口注入模拟后端。
 - 建立格式检查、编译检查和必要的核心测试入口。
 
-验收：能够从 workspace 启动窗口；core 和 backend 不依赖 GUI；记录实际运行命令和环境限制。
+验收：能够从 workspace 启动窗口；app 和 core 不依赖 GUI；记录实际运行命令和环境限制。
 
 ## 阶段 1：表格浏览与模拟数据
 
@@ -182,3 +182,10 @@ crates/
 ## 文件导航调整：Folder Tabs
 
 移除左侧文件侧栏、拖动手柄和折叠状态，改用 gpui-kit `TabBar::folder()` 展示打开的示例文件。标签位于窗口顶部，活动文件有选中样式。切换标签会取消旧请求、清空筛选和单元格详情，再加载对应数据；重复点击当前标签不重新查询。真实文件打开仍属于后端接入阶段。
+
+## 项目配置调整
+
+- `rowglide-app` 保存共享模型和查询接口，`rowglide-core` 实现后端，`rowglide-ui` 保留程序入口。
+- 统一 Apache-2.0 许可证及 Cargo 元信息；Rust 1.99 为当前开发与验证基线，不宣称兼容更早工具链。
+- 禁止 unsafe、无用路径限定和不可达公开项；保留 unwrap / expect 禁令及 Clippy 警告即错误。
+- Release 使用 opt-level 3、Thin LTO、单 codegen unit、移除调试信息；保留 panic unwind。
