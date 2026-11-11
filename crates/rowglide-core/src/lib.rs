@@ -62,6 +62,7 @@ impl Backend for MockBackend {
             .find(|s| s.id == query.source)
             .ok_or_else(|| QueryError::Invalid("Unknown demo dataset".into()))?;
         let nested = source.id != 1;
+        // Filter row IDs before materializing Arrow batches.
         let mut ids = Vec::new();
         let needle = query.search.to_lowercase();
         for id in 0..source.rows {
@@ -75,6 +76,7 @@ impl Backend for MockBackend {
                 ids.push(id);
             }
         }
+        // Sort the complete filtered set before applying the browse range.
         if let Some(sort) = query.sort {
             if sort.column >= 5 {
                 return Err(QueryError::Invalid(
@@ -107,6 +109,7 @@ impl Backend for MockBackend {
                 }
             });
         }
+        // Recognize demo presets only; this is not a SQL parser.
         if let Some(sql) = &query.sql {
             match sql.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase().trim_end_matches(';') {
                 "select * from current_file limit 100" => ids.truncate(100),
@@ -114,6 +117,7 @@ impl Backend for MockBackend {
                 _ => return Err(QueryError::Invalid("Demo SQL only. Try SELECT * FROM current_file LIMIT 100; or SELECT * FROM current_file WHERE false;".into())),
             }
         }
+        // Browse limits do not alter explicit SQL results.
         if query.sql.is_none() {
             let start = query.offset.min(ids.len());
             ids.drain(..start);
@@ -178,6 +182,7 @@ fn schema(nested: bool) -> SchemaRef {
     Arc::new(Schema::new(fields))
 }
 
+// Materialize at most 256 rows per pull from the selected row IDs.
 struct MockCursor {
     schema: SchemaRef,
     ids: Vec<usize>,

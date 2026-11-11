@@ -21,6 +21,7 @@ pub struct Sort {
     pub descending: bool,
 }
 
+/// Browse parameters or an explicit SQL request for a dataset.
 #[derive(Clone, Debug, Default)]
 pub struct Query {
     pub source: usize,
@@ -35,6 +36,7 @@ pub struct Query {
     pub sql: Option<String>,
 }
 
+/// Shared cancellation flag checked cooperatively by background work.
 #[derive(Clone, Default)]
 pub struct Cancellation(Arc<AtomicBool>);
 impl Cancellation {
@@ -79,6 +81,7 @@ pub trait BatchCursor: Send {
     fn next_batch(&mut self) -> Result<Option<RecordBatch>, QueryError>;
 }
 
+/// Blocking data operations; callers must execute queries off the UI thread.
 pub trait Backend: Send + Sync {
     fn sources(&self) -> Vec<Source>;
     fn query(
@@ -116,6 +119,7 @@ impl Preview {
             let Some(batch) = cursor.next_batch()? else {
                 break;
             };
+            // Bound retained rows and memory even when the source is larger.
             let remaining = MAX_ROWS - preview.rows;
             if remaining == 0 || bytes + batch.get_array_memory_size() > MAX_BYTES {
                 preview.truncated = true;
@@ -133,6 +137,7 @@ impl Preview {
         Ok(preview)
     }
 
+    /// Locate a visible row within the retained Arrow batches.
     pub fn row(&self, mut row: usize) -> Option<(&RecordBatch, usize)> {
         for batch in &self.batches {
             if row < batch.num_rows() {

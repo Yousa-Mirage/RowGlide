@@ -1,3 +1,4 @@
+//! Table adapter for typed previews and column-sort events.
 use crate::cells;
 use gpui_kit::component::{
     ActiveTheme,
@@ -44,6 +45,7 @@ impl TableDelegate for Grid {
         )
         .width(px(if index == 1 { 200. } else { 150. }))
         .movable(false);
+        // Only the first five scalar columns support sorting in the mock schema.
         if index < 5 {
             column = column.sort(match self.sort.filter(|sort| sort.column == index) {
                 Some(sort) if sort.descending => ColumnSort::Descending,
@@ -71,6 +73,7 @@ impl TableDelegate for Grid {
             }),
             _ => None,
         };
+        // Delegate sorting to the backend so it covers the full result.
         self.events.update(cx, |_, cx| cx.emit(SortRequested(sort)));
     }
     fn loading(&self, _: &App) -> bool {

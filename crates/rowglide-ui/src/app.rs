@@ -1,3 +1,4 @@
+//! Workspace layout, query lifecycle, and cell inspection.
 use crate::{
     cells,
     grid::{Grid, GridEvents, SortRequested},
@@ -15,6 +16,7 @@ use gpui_kit::*;
 use rowglide_app::{Backend, Cancellation, Preview, Query, Source};
 use std::{collections::HashSet, sync::Arc, time::Instant};
 
+/// Owns view state and coordinates background queries.
 pub(crate) struct Workspace {
     backend: Arc<dyn Backend>,
     sources: Vec<Source>,
@@ -114,6 +116,7 @@ impl Workspace {
         this
     }
 
+    // Validate browse controls before replacing the active query.
     fn apply_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let limit = self.limit.read(cx).value();
         let offset = self.offset.read(cx).value();
@@ -154,6 +157,7 @@ impl Workspace {
             .update(cx, |state, cx| state.set_value("0", window, cx));
     }
 
+    // Replace the active task and collect a bounded preview off the UI thread.
     fn run(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.cancellation.cancel();
         self.cancellation = Cancellation::default();
@@ -182,6 +186,7 @@ impl Workspace {
         self.task = Some(cx.spawn_in(window, async move |this, cx| {
             let (result, elapsed) = work.await;
             let _ = this.update(cx, |this, cx| {
+                // Discard results from cancelled or superseded queries.
                 if generation != this.generation {
                     return;
                 }
@@ -234,6 +239,7 @@ impl Workspace {
         cx.notify();
     }
 
+    // Render an expandable cell tree with a fixed nesting depth limit.
     fn tree(
         &self,
         label: String,
@@ -302,6 +308,7 @@ impl Drop for Workspace {
 impl Render for Workspace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let border = rgb(0xe4e8e7);
+        // File tabs switch datasets and reset browse controls.
         let tabs = TabBar::new("open-file-tabs")
             .folder()
             .selected_index(
@@ -329,6 +336,7 @@ impl Render for Workspace {
                 this.reset_inputs(window, cx);
                 this.run(window, cx);
             }));
+        // Browse toolbar: filter, row range, reset, and SQL toggle.
         let mut content = div().flex_1().min_w_0().min_h_0().flex().flex_col().child(
             div()
                 .px_5()
@@ -393,6 +401,7 @@ impl Render for Workspace {
                         })),
                 ),
         );
+        // Optional SQL editor with explicit demo presets.
         if self.sql_open {
             content = content.child(div().p_4().border_b_1().border_color(border).bg(rgb(0xf9faf9))
                 .child(div().flex().items_center().justify_between().mb_3().child(div().text_xs().text_color(cx.theme().muted_foreground).child("SQL · DEMO PRESETS ONLY"))
@@ -401,6 +410,7 @@ impl Render for Workspace {
                 .child(Editor::new(&self.sql).h(px(95.)))
                 .child(div().mt_2().text_xs().text_color(cx.theme().muted_foreground).child("Supported: SELECT * FROM current_file LIMIT 100;   /   SELECT * FROM current_file WHERE false;")));
         }
+        // Virtualized result table fills the available space.
         let mut body = div().flex_1().min_h_0().flex().child(
             div().flex_1().min_w_0().h_full().child(
                 DataTable::new(&self.table)
@@ -409,6 +419,7 @@ impl Render for Workspace {
                     .small(),
             ),
         );
+        // Side panel shows the selected cell and its nested values.
         if let Some((name, array, row)) = self.selected.clone() {
             body = body.child(
                 div()
@@ -464,6 +475,7 @@ impl Render for Workspace {
                     ),
             );
         }
+        // Bottom status bar: query status, cancellation, and sample-data label.
         content = content.child(body).child(
             div()
                 .min_h(px(28.))
@@ -501,6 +513,7 @@ impl Render for Workspace {
                         .child("SAMPLE DATA"),
                 ),
         );
+        // Root layout stacks file tabs above the browsing workspace.
         div()
             .id("workspace")
             .size_full()

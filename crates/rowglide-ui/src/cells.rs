@@ -1,7 +1,9 @@
+//! Display helpers that preserve the underlying Arrow values.
 use arrow_array::{
     Array, ArrayRef, BooleanArray, Float64Array, Int64Array, ListArray, StringArray, StructArray,
 };
 
+/// Format a compact cell preview, truncating strings to 240 characters.
 pub(crate) fn summary(array: &ArrayRef, row: usize) -> String {
     if row >= array.len() {
         return String::new();
@@ -30,6 +32,7 @@ pub(crate) fn summary(array: &ArrayRef, row: usize) -> String {
     format!("{:?}", array.data_type())
 }
 
+/// Expose struct fields or up to 200 list items for the inspector.
 pub(crate) fn children(array: &ArrayRef, row: usize) -> Vec<(String, ArrayRef, usize)> {
     if array.is_null(row) {
         return vec![];

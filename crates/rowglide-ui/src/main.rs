@@ -1,3 +1,4 @@
+//! Native application startup and backend injection.
 mod app;
 mod cells;
 mod grid;
