@@ -1,8 +1,8 @@
 //! Native application startup and backend injection.
 
-mod app;
 mod cells;
-mod grid;
+mod table;
+mod workspace;
 
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
@@ -35,7 +35,7 @@ fn main() {
         };
 
         if let Err(error) = open_window(options, cx, |window, cx| {
-            cx.new(|cx| app::Workspace::new(Arc::new(rowglide_core::MockBackend), window, cx))
+            cx.new(|cx| workspace::Workspace::new(Arc::new(rowglide_core::MockBackend), window, cx))
         }) {
             eprintln!("Cannot open Rowglide: {error}");
             cx.quit();

@@ -30,6 +30,21 @@ Queries run off the UI thread, with cancellation and stale-result rejection. Pre
 - `rowglide-core`: deterministic mock backend and pull-based batches.
 - `rowglide-ui`: GPUI Kit components, interactions and application entry point.
 
+## UI layout
+
+`rowglide-ui/src` uses a small set of modules:
+
+- `main.rs`: native startup and backend injection.
+- `workspace/mod.rs`: shared view state, event wiring, and main layout.
+- `workspace/controls.rs`: file tabs, browse toolbar, SQL editor, and status bar.
+- `workspace/query.rs`: input validation, query execution, and cancellation.
+- `workspace/inspector.rs`: selected-cell panel and nested-value tree.
+- `table.rs`: virtualized table delegate and sort events.
+- `cells.rs`: Arrow value summaries and nested-value access.
+
+Workspace owns the shared state; its child modules implement focused methods.
+Table rendering and cell helpers remain independent of workspace coordination.
+
 ## Checks
 
 ```sh
