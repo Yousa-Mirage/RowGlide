@@ -7,12 +7,22 @@ use gpui_kit::component::{
     ActiveTheme, Sizable,
     button::{Button, ButtonVariants},
     input::{Editor, EditorState, Input, InputState},
+    resizable::{HandleEdge, resize_handle},
     table::{DataTable, TableEvent, TableState},
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use rowglide_core::{Backend, Cancellation, Preview, Query, Source};
 use std::{collections::HashSet, sync::Arc, time::Instant};
+
+#[derive(Clone)]
+struct ResizeSidebar;
+
+impl Render for ResizeSidebar {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        Empty
+    }
+}
 
 pub struct Workspace {
     backend: Arc<dyn Backend>,
@@ -29,6 +39,8 @@ pub struct Workspace {
     status: String,
     error: bool,
     sql_open: bool,
+    sidebar_width: Pixels,
+    sidebar_collapsed: bool,
     selected: Option<(String, ArrayRef, usize)>,
     expanded: HashSet<String>,
 }
@@ -95,6 +107,8 @@ impl Workspace {
             status: "Ready".into(),
             error: false,
             sql_open: false,
+            sidebar_width: px(218.),
+            sidebar_collapsed: false,
             selected: None,
             expanded: HashSet::new(),
         };
@@ -243,11 +257,14 @@ impl Drop for Workspace {
     }
 }
 impl Render for Workspace {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let sidebar_max = (window.viewport_size().width - px(560.)).clamp(px(180.), px(480.));
+        let sidebar_width = self.sidebar_width.min(sidebar_max);
         let border = rgb(0xe4e8e7);
         let source = &self.sources[self.query.source];
         let sidebar = div()
-            .w(px(218.))
+            .relative()
+            .w(sidebar_width)
             .flex_shrink_0()
             .h_full()
             .bg(rgb(0xf5f7f6))
@@ -259,10 +276,27 @@ impl Render for Workspace {
             .gap_2()
             .child(
                 div()
-                    .text_lg()
-                    .font_weight(FontWeight::SEMIBOLD)
+                    .flex()
+                    .items_center()
+                    .justify_between()
                     .mb_5()
-                    .child("▦  Rowglide"),
+                    .child(
+                        div()
+                            .text_lg()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("▦  Rowglide"),
+                    )
+                    .child(
+                        Button::new("collapse-files")
+                            .small()
+                            .ghost()
+                            .label("‹")
+                            .tooltip("Collapse file sidebar")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.sidebar_collapsed = true;
+                                cx.notify();
+                            })),
+                    ),
             )
             .child(
                 div()
@@ -312,6 +346,30 @@ impl Render for Workspace {
                             .mt_2()
                             .child("Explore sample data. Local file support is coming next."),
                     ),
+            );
+        let sidebar = sidebar.child(
+            resize_handle("file-sidebar-resize", Axis::Horizontal)
+                .inside(HandleEdge::Trailing)
+                .on_drag(ResizeSidebar, |drag, _, _, cx| cx.new(|_| drag.clone())),
+        );
+        let collapsed_sidebar = div()
+            .w(px(52.))
+            .h_full()
+            .flex_shrink_0()
+            .bg(rgb(0xf5f7f6))
+            .border_r_1()
+            .border_color(border)
+            .p_2()
+            .child(
+                Button::new("expand-files")
+                    .small()
+                    .ghost()
+                    .label("›")
+                    .tooltip("Expand file sidebar")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.sidebar_collapsed = false;
+                        cx.notify();
+                    })),
             );
         let mut content = div()
             .flex_1()
@@ -509,12 +567,27 @@ impl Render for Workspace {
                 ),
         );
         div()
+            .id("workspace")
+            .on_drag_move::<ResizeSidebar>(cx.listener(
+                |this, event: &DragMoveEvent<ResizeSidebar>, window, cx| {
+                    if !this.sidebar_collapsed {
+                        let max =
+                            (window.viewport_size().width - px(560.)).clamp(px(180.), px(480.));
+                        this.sidebar_width = event.event.position.x.clamp(px(180.), max);
+                        cx.notify();
+                    }
+                },
+            ))
             .size_full()
             .bg(rgb(0xffffff))
             .text_color(rgb(0x263b32))
             .font_family(".SystemUIFont")
             .flex()
-            .child(sidebar)
+            .child(if self.sidebar_collapsed {
+                collapsed_sidebar.into_any_element()
+            } else {
+                sidebar.into_any_element()
+            })
             .child(content)
     }
 }
