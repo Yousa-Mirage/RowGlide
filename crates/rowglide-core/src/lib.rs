@@ -1,4 +1,5 @@
 //! Deterministic, typed demo data. No files are read and no SQL engine is embedded.
+
 use arrow_array::{
     ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray, StructArray,
     builder::{ListBuilder, StringBuilder},
@@ -9,6 +10,7 @@ use std::sync::Arc;
 
 pub const PREVIEW_SQL: &str = "SELECT * FROM current_file LIMIT 100;";
 pub const EMPTY_SQL: &str = "SELECT * FROM current_file WHERE false;";
+
 const NAMES: [&str; 8] = [
     "Olivia Chen",
     "Noah Williams",
@@ -23,6 +25,7 @@ const REGIONS: [&str; 4] = ["Shanghai", "London", "Tokyo", "San Francisco"];
 
 #[derive(Default)]
 pub struct MockBackend;
+
 impl Backend for MockBackend {
     fn sources(&self) -> Vec<Source> {
         vec![
@@ -62,6 +65,7 @@ impl Backend for MockBackend {
             .find(|s| s.id == query.source)
             .ok_or_else(|| QueryError::Invalid("Unknown demo dataset".into()))?;
         let nested = source.id != 1;
+
         // Filter row IDs before materializing Arrow batches.
         let mut ids = Vec::new();
         let needle = query.search.to_lowercase();
@@ -76,6 +80,7 @@ impl Backend for MockBackend {
                 ids.push(id);
             }
         }
+
         // Sort the complete filtered set before applying the browse range.
         if let Some(sort) = query.sort {
             if sort.column >= 5 {
@@ -93,6 +98,7 @@ impl Backend for MockBackend {
                         .unwrap_or(std::cmp::Ordering::Equal),
                     _ => active(*a).cmp(&active(*b)),
                 };
+
                 // Nulls stay last in either direction.
                 if sort.column == 3 && (amount(*a).is_none() || amount(*b).is_none()) {
                     amount(*a)
@@ -109,6 +115,7 @@ impl Backend for MockBackend {
                 }
             });
         }
+
         // Recognize demo presets only; this is not a SQL parser.
         if let Some(sql) = &query.sql {
             match sql.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase().trim_end_matches(';') {
@@ -117,6 +124,7 @@ impl Backend for MockBackend {
                 _ => return Err(QueryError::Invalid("Demo SQL only. Try SELECT * FROM current_file LIMIT 100; or SELECT * FROM current_file WHERE false;".into())),
             }
         }
+
         // Browse limits do not alter explicit SQL results.
         if query.sql.is_none() {
             let start = query.offset.min(ids.len());
@@ -160,6 +168,7 @@ fn schema(nested: bool) -> SchemaRef {
         Field::new("amount", DataType::Float64, true),
         Field::new("active", DataType::Boolean, false),
     ];
+
     if nested {
         fields.push(Field::new(
             "tags",
@@ -190,6 +199,7 @@ struct MockCursor {
     nested: bool,
     cancellation: Cancellation,
 }
+
 impl BatchCursor for MockCursor {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
@@ -204,6 +214,7 @@ impl BatchCursor for MockCursor {
         if self.offset == self.ids.len() {
             return Ok(None);
         }
+
         let end = (self.offset + 256).min(self.ids.len());
         let ids = &self.ids[self.offset..end];
         let mut arrays: Vec<ArrayRef> = vec![
@@ -221,6 +232,7 @@ impl BatchCursor for MockCursor {
                 ids.iter().map(|id| Some(active(*id))),
             )),
         ];
+
         if self.nested {
             let mut tags = ListBuilder::new(StringBuilder::new());
             for id in ids {
@@ -236,6 +248,7 @@ impl BatchCursor for MockCursor {
                 }
             }
             arrays.push(Arc::new(tags.finish()));
+
             let profile = StructArray::from(vec![
                 (
                     Arc::new(Field::new("plan", DataType::Utf8, false)),
@@ -259,6 +272,7 @@ impl BatchCursor for MockCursor {
             ]);
             arrays.push(Arc::new(profile));
         }
+
         self.offset = end;
         Ok(Some(RecordBatch::try_new(self.schema.clone(), arrays)?))
     }
@@ -290,6 +304,7 @@ mod tests {
             .downcast_ref::<Int64Array>()
             .ok_or("Expected id column")?;
         assert_eq!(ids.values().as_ref(), &[59985, 59977]);
+
         for (limit, offset) in [(Some(0), 0), (Some(10), usize::MAX)] {
             let mut cursor = MockBackend.query(
                 Query {
@@ -313,6 +328,7 @@ mod tests {
             cancel,
         )?;
         assert_eq!(cursor.total_rows(), Some(100));
+
         Ok(())
     }
 
@@ -337,6 +353,7 @@ mod tests {
             .downcast_ref::<Int64Array>()
             .ok_or("id column must be Int64")?;
         assert_eq!(ids.value(0), 60000);
+
         for descending in [false, true] {
             let query = Query {
                 sort: Some(Sort {
@@ -363,6 +380,7 @@ mod tests {
                 }
             }
         }
+
         Ok(())
     }
 
@@ -372,6 +390,7 @@ mod tests {
         let mut cursor = MockBackend.query(Query::default(), cancel.clone())?;
         cancel.cancel();
         assert!(matches!(cursor.next_batch(), Err(QueryError::Cancelled)));
+
         let mut empty = MockBackend.query(
             Query {
                 source: 2,
@@ -392,6 +411,7 @@ mod tests {
                 )
                 .is_err()
         );
+
         Ok(())
     }
 }

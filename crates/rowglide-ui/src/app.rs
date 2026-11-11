@@ -1,4 +1,5 @@
 //! Workspace layout, query lifecycle, and cell inspection.
+
 use crate::{
     cells,
     grid::{Grid, GridEvents, SortRequested},
@@ -59,12 +60,14 @@ impl Workspace {
             .cell_selectable(true)
             .col_movable(false)
         });
+
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Filter name or city…"));
         let limit = cx.new(|cx| InputState::new(window, cx).placeholder("All"));
         let offset = cx.new(|cx| InputState::new(window, cx).default_value("0"));
         let sql = cx.new(|cx| {
             EditorState::new(window, cx).default_value("SELECT * FROM current_file LIMIT 100;")
         });
+
         let subscriptions = vec![
             cx.subscribe_in(
                 &events,
@@ -72,6 +75,7 @@ impl Workspace {
                 |this, _, event: &SortRequested, window, cx| {
                     this.query.sort = event.0;
                     this.query.sql = None;
+
                     this.run(window, cx);
                 },
             ),
@@ -92,6 +96,7 @@ impl Workspace {
                 }
             }),
         ];
+
         let mut this = Self {
             sources: backend.sources(),
             backend,
@@ -112,6 +117,7 @@ impl Workspace {
             selected: None,
             expanded: HashSet::new(),
         };
+
         this.run(window, cx);
         this
     }
@@ -131,6 +137,7 @@ impl Workspace {
         } else {
             parse(&offset)
         };
+
         match (limit, offset) {
             (Ok(limit), Ok(offset)) => {
                 self.query.limit = limit;
@@ -163,16 +170,19 @@ impl Workspace {
         self.cancellation = Cancellation::default();
         self.generation += 1;
         let generation = self.generation;
+
         self.busy = true;
         self.error = false;
         self.status = "Loading demo data…".into();
         self.selected = None;
+
         self.table.update(cx, |table, cx| {
             table.delegate_mut().loading = true;
             table.delegate_mut().preview = None;
             table.refresh(cx);
             cx.notify();
         });
+
         let backend = self.backend.clone();
         let query = self.query.clone();
         let cancel = self.cancellation.clone();
@@ -183,6 +193,7 @@ impl Workspace {
                 .and_then(|cursor| Preview::collect(cursor, &cancel));
             (result, started.elapsed())
         });
+
         self.task = Some(cx.spawn_in(window, async move |this, cx| {
             let (result, elapsed) = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -190,6 +201,7 @@ impl Workspace {
                 if generation != this.generation {
                     return;
                 }
+
                 this.busy = false;
                 match result {
                     Ok(preview) => {
@@ -232,6 +244,7 @@ impl Workspace {
         self.generation += 1;
         self.busy = false;
         self.status = "Cancelled · run a query to load data".into();
+
         self.table.update(cx, |table, cx| {
             table.delegate_mut().loading = false;
             cx.notify();
@@ -289,12 +302,14 @@ impl Workspace {
                         .child(cells::summary(&array, row)),
                 ),
         );
+
         if open && has_children {
             for (i, (label, child, row)) in children.into_iter().enumerate() {
                 node =
                     node.child(self.tree(label, child, row, format!("{path}/{i}"), depth + 1, cx));
             }
         }
+
         node.into_any_element()
     }
 }
@@ -308,6 +323,7 @@ impl Drop for Workspace {
 impl Render for Workspace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let border = rgb(0xe4e8e7);
+
         // File tabs switch datasets and reset browse controls.
         let tabs = TabBar::new("open-file-tabs")
             .folder()
@@ -334,8 +350,10 @@ impl Render for Workspace {
                     ..Default::default()
                 };
                 this.reset_inputs(window, cx);
+
                 this.run(window, cx);
             }));
+
         // Browse toolbar: filter, row range, reset, and SQL toggle.
         let mut content = div().flex_1().min_w_0().min_h_0().flex().flex_col().child(
             div()
@@ -387,6 +405,7 @@ impl Render for Workspace {
                                 ..Default::default()
                             };
                             this.reset_inputs(window, cx);
+
                             this.run(window, cx);
                         })),
                 )
@@ -401,6 +420,7 @@ impl Render for Workspace {
                         })),
                 ),
         );
+
         // Optional SQL editor with explicit demo presets.
         if self.sql_open {
             content = content.child(div().p_4().border_b_1().border_color(border).bg(rgb(0xf9faf9))
@@ -410,6 +430,7 @@ impl Render for Workspace {
                 .child(Editor::new(&self.sql).h(px(95.)))
                 .child(div().mt_2().text_xs().text_color(cx.theme().muted_foreground).child("Supported: SELECT * FROM current_file LIMIT 100;   /   SELECT * FROM current_file WHERE false;")));
         }
+
         // Virtualized result table fills the available space.
         let mut body = div().flex_1().min_h_0().flex().child(
             div().flex_1().min_w_0().h_full().child(
@@ -419,6 +440,7 @@ impl Render for Workspace {
                     .small(),
             ),
         );
+
         // Side panel shows the selected cell and its nested values.
         if let Some((name, array, row)) = self.selected.clone() {
             body = body.child(
@@ -475,6 +497,7 @@ impl Render for Workspace {
                     ),
             );
         }
+
         // Bottom status bar: query status, cancellation, and sample-data label.
         content = content.child(body).child(
             div()
@@ -513,6 +536,7 @@ impl Render for Workspace {
                         .child("SAMPLE DATA"),
                 ),
         );
+
         // Root layout stacks file tabs above the browsing workspace.
         div()
             .id("workspace")

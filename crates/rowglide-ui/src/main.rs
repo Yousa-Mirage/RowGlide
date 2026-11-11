@@ -1,7 +1,9 @@
 //! Native application startup and backend injection.
+
 mod app;
 mod cells;
 mod grid;
+
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 use std::sync::Arc;
