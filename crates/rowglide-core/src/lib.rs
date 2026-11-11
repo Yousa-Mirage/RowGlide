@@ -107,11 +107,18 @@ impl Backend for MockBackend {
                 }
             });
         }
-        if let Some(sql) = query.sql {
+        if let Some(sql) = &query.sql {
             match sql.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase().trim_end_matches(';') {
                 "select * from current_file limit 100" => ids.truncate(100),
                 "select * from current_file where false" => ids.clear(),
                 _ => return Err(QueryError::Invalid("Demo SQL only. Try SELECT * FROM current_file LIMIT 100; or SELECT * FROM current_file WHERE false;".into())),
+            }
+        }
+        if query.sql.is_none() {
+            let start = query.offset.min(ids.len());
+            ids.drain(..start);
+            if let Some(limit) = query.limit {
+                ids.truncate(limit);
             }
         }
         cancellation.check()?;
@@ -256,6 +263,53 @@ impl BatchCursor for MockCursor {
 mod tests {
     use super::*;
     use rowglide_app::{Preview, Sort};
+
+    #[test]
+    fn browse_window_follows_filter_and_sort() -> Result<(), Box<dyn std::error::Error>> {
+        let cancel = Cancellation::default();
+        let query = Query {
+            search: "Olivia".into(),
+            sort: Some(Sort {
+                column: 0,
+                descending: true,
+            }),
+            limit: Some(2),
+            offset: 1,
+            ..Default::default()
+        };
+        let preview = Preview::collect(MockBackend.query(query, cancel.clone())?, &cancel)?;
+        assert_eq!(preview.total_rows, Some(2));
+        let ids = preview.batches[0]
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .ok_or("Expected id column")?;
+        assert_eq!(ids.values().as_ref(), &[59985, 59977]);
+        for (limit, offset) in [(Some(0), 0), (Some(10), usize::MAX)] {
+            let mut cursor = MockBackend.query(
+                Query {
+                    limit,
+                    offset,
+                    ..Default::default()
+                },
+                cancel.clone(),
+            )?;
+            assert_eq!(cursor.total_rows(), Some(0));
+            assert_eq!(cursor.schema().fields().len(), 7);
+            assert!(cursor.next_batch()?.is_none());
+        }
+        let cursor = MockBackend.query(
+            Query {
+                sql: Some(PREVIEW_SQL.into()),
+                limit: Some(0),
+                offset: usize::MAX,
+                ..Default::default()
+            },
+            cancel,
+        )?;
+        assert_eq!(cursor.total_rows(), Some(100));
+        Ok(())
+    }
 
     #[test]
     fn sorting_precedes_preview_limit_and_nulls_stay_last() -> Result<(), Box<dyn std::error::Error>>

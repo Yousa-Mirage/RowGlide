@@ -21,6 +21,8 @@ pub(crate) struct Workspace {
     query: Query,
     table: Entity<TableState<Grid>>,
     search: Entity<InputState>,
+    limit: Entity<InputState>,
+    offset: Entity<InputState>,
     sql: Entity<EditorState>,
     _subscriptions: Vec<Subscription>,
     task: Option<Task<()>>,
@@ -56,6 +58,8 @@ impl Workspace {
             .col_movable(false)
         });
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Filter name or city…"));
+        let limit = cx.new(|cx| InputState::new(window, cx).placeholder("All"));
+        let offset = cx.new(|cx| InputState::new(window, cx).default_value("0"));
         let sql = cx.new(|cx| {
             EditorState::new(window, cx).default_value("SELECT * FROM current_file LIMIT 100;")
         });
@@ -92,6 +96,8 @@ impl Workspace {
             query: Query::default(),
             table,
             search,
+            limit,
+            offset,
             sql,
             _subscriptions: subscriptions,
             task: None,
@@ -106,6 +112,46 @@ impl Workspace {
         };
         this.run(window, cx);
         this
+    }
+
+    fn apply_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let limit = self.limit.read(cx).value();
+        let offset = self.offset.read(cx).value();
+        let parse = |value: &str| value.trim().parse::<usize>();
+        let limit = if limit.trim().is_empty() {
+            Ok(None)
+        } else {
+            parse(&limit).map(Some)
+        };
+        let offset = if offset.trim().is_empty() {
+            Ok(0)
+        } else {
+            parse(&offset)
+        };
+        match (limit, offset) {
+            (Ok(limit), Ok(offset)) => {
+                self.query.limit = limit;
+                self.query.offset = offset;
+                self.query.search = self.search.read(cx).value().to_string();
+                self.query.sql = None;
+                self.run(window, cx);
+            }
+            _ => {
+                self.error = true;
+                self.status =
+                    "Limit and Offset must be non-negative whole numbers within range".into();
+                cx.notify();
+            }
+        }
+    }
+
+    fn reset_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.limit
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.offset
+            .update(cx, |state, cx| state.set_value("0", window, cx));
     }
 
     fn run(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -256,7 +302,6 @@ impl Drop for Workspace {
 impl Render for Workspace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let border = rgb(0xe4e8e7);
-        let source = &self.sources[self.query.source];
         let tabs = TabBar::new("open-file-tabs")
             .folder()
             .selected_index(
@@ -281,97 +326,73 @@ impl Render for Workspace {
                     source: source.id,
                     ..Default::default()
                 };
-                this.search
-                    .update(cx, |state, cx| state.set_value("", window, cx));
+                this.reset_inputs(window, cx);
                 this.run(window, cx);
             }));
-        let mut content = div()
-            .flex_1()
-            .min_w_0()
-            .min_h_0()
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .px_6()
-                    .py_5()
-                    .border_b_1()
-                    .border_color(border)
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .child(
-                                div()
-                                    .text_xl()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(source.name.clone()),
-                            )
-                            .child(
-                                Button::new("sql-toggle")
-                                    .small()
-                                    .label(if self.sql_open {
-                                        "Hide SQL"
-                                    } else {
-                                        "SQL workspace"
-                                    })
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.sql_open = !this.sql_open;
-                                        cx.notify();
-                                    })),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .mt_2()
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(source.description),
-                    ),
-            )
-            .child(
-                div()
-                    .px_5()
-                    .py_3()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .border_b_1()
-                    .border_color(border)
-                    .child(div().w(px(280.)).child(Input::new(&self.search).small()))
-                    .child(
-                        Button::new("filter")
-                            .small()
-                            .label("Apply filter")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.query.search = this.search.read(cx).value().to_string();
-                                this.query.sql = None;
-                                this.run(window, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("reset")
-                            .small()
-                            .ghost()
-                            .label("Reset")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.query = Query {
-                                    source: this.query.source,
-                                    ..Default::default()
-                                };
-                                this.search.update(cx, |s, cx| s.set_value("", window, cx));
-                                this.run(window, cx);
-                            })),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child("Click a cell to inspect"),
-                    ),
-            );
+        let mut content = div().flex_1().min_w_0().min_h_0().flex().flex_col().child(
+            div()
+                .px_5()
+                .py_2()
+                .flex()
+                .items_center()
+                .gap_2()
+                .border_b_1()
+                .border_color(border)
+                .flex_shrink_0()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(160.))
+                        .max_w(px(320.))
+                        .child(Input::new(&self.search).small()),
+                )
+                .child(div().text_xs().child("Limit"))
+                .child(
+                    div()
+                        .w(px(80.))
+                        .flex_shrink_0()
+                        .child(Input::new(&self.limit).small()),
+                )
+                .child(div().text_xs().child("Offset"))
+                .child(
+                    div()
+                        .w(px(80.))
+                        .flex_shrink_0()
+                        .child(Input::new(&self.offset).small()),
+                )
+                .child(
+                    Button::new("filter")
+                        .small()
+                        .label("Apply")
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.apply_filter(window, cx);
+                        })),
+                )
+                .child(
+                    Button::new("reset")
+                        .small()
+                        .ghost()
+                        .label("Reset")
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.query = Query {
+                                source: this.query.source,
+                                ..Default::default()
+                            };
+                            this.reset_inputs(window, cx);
+                            this.run(window, cx);
+                        })),
+                )
+                .child(div().flex_1())
+                .child(
+                    Button::new("sql-toggle")
+                        .small()
+                        .label(if self.sql_open { "Hide SQL" } else { "SQL" })
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.sql_open = !this.sql_open;
+                            cx.notify();
+                        })),
+                ),
+        );
         if self.sql_open {
             content = content.child(div().p_4().border_b_1().border_color(border).bg(rgb(0xf9faf9))
                 .child(div().flex().items_center().justify_between().mb_3().child(div().text_xs().text_color(cx.theme().muted_foreground).child("SQL · DEMO PRESETS ONLY"))

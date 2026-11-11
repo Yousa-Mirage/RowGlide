@@ -26,6 +26,11 @@ pub struct Query {
     pub source: usize,
     pub search: String,
     pub sort: Option<Sort>,
+    /// Browse row limit, applied after filtering and sorting; None is unlimited.
+    /// SQL requests use their own query semantics instead.
+    pub limit: Option<usize>,
+    /// Explicit browse offset, not an automatic pagination strategy.
+    pub offset: usize,
     /// Only explicitly supported demo SQL is accepted by the mock backend.
     pub sql: Option<String>,
 }
