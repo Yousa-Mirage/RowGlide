@@ -45,7 +45,8 @@ rowglide-ui --------------------> rowglide-core
 
 - 使用 `jj` 管理版本；仓库已有 `.jj` 和 `.git` 时，`.git` 可以是 jj 的底层存储，不代表改用 Git 工作流。
 - 开始修改前检查 `jj status`、`jj log -r 'ancestors(@, 5)'` 和必要的 `jj diff`，识别已有工作。
-- 使用 `jj diff` 审阅变更，使用 `jj describe -m "..."` 描述 change；适当时用 `jj new` 开始下一项独立工作。
+- 每个独立的修改都视为独立的 jj change。开始下一项独立修改前使用 `jj new`，不要把互不相关的修改混入同一个 change；同一修改所需的实现、测试和文档可以放在同一个 change 中。
+- 使用 `jj diff` 审阅变更，使用 `jj describe -m "..."` 描述 change。
 - 不使用 `git add`、`git commit`、`git checkout`、`git reset` 或 `git stash` 管理工作区。
 - 不擅自执行 `jj abandon`、`jj restore`、历史重写或远端推送；尤其不得覆盖或丢弃用户已有修改。
 - 默认不创建 bookmark、不推送；确有发布或协作需求时遵循用户授权。
