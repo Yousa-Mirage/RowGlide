@@ -466,9 +466,9 @@ impl Render for Workspace {
         }
         content = content.child(body).child(
             div()
-                .min_h(px(38.))
+                .min_h(px(28.))
                 .px_5()
-                .py_2()
+                .py(px(2.))
                 .border_t_1()
                 .border_color(border)
                 .flex()
