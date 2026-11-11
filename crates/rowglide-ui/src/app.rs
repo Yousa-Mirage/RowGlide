@@ -478,14 +478,7 @@ impl Render for Workspace {
             .font_family(".SystemUIFont")
             .flex()
             .flex_col()
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .bg(rgb(0xf5f7f6))
-                    .pt_2()
-                    .px_3()
-                    .child(tabs),
-            )
+            .child(div().flex_shrink_0().bg(rgb(0xf5f7f6)).px_3().child(tabs))
             .child(content)
     }
 }
