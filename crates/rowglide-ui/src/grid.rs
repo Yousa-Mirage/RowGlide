@@ -16,6 +16,7 @@ pub(crate) struct Grid {
 }
 pub(crate) struct GridEvents;
 impl EventEmitter<SortRequested> for GridEvents {}
+
 impl TableDelegate for Grid {
     fn columns_count(&self, _: &App) -> usize {
         self.preview.as_ref().map_or(0, |p| p.schema.fields().len())

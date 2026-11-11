@@ -33,6 +33,7 @@ pub(crate) struct Workspace {
     selected: Option<(String, ArrayRef, usize)>,
     expanded: HashSet<String>,
 }
+
 impl Workspace {
     pub(crate) fn new(
         backend: Arc<dyn Backend>,
@@ -106,6 +107,7 @@ impl Workspace {
         this.run(window, cx);
         this
     }
+
     fn run(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.cancellation.cancel();
         self.cancellation = Cancellation::default();
@@ -173,6 +175,7 @@ impl Workspace {
         }));
         cx.notify();
     }
+
     fn cancel(&mut self, cx: &mut Context<Self>) {
         self.cancellation.cancel();
         self.generation += 1;
@@ -184,6 +187,7 @@ impl Workspace {
         });
         cx.notify();
     }
+
     fn tree(
         &self,
         label: String,
@@ -242,11 +246,13 @@ impl Workspace {
         node.into_any_element()
     }
 }
+
 impl Drop for Workspace {
     fn drop(&mut self) {
         self.cancellation.cancel();
     }
 }
+
 impl Render for Workspace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let border = rgb(0xe4e8e7);

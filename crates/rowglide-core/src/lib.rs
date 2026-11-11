@@ -49,6 +49,7 @@ impl Backend for MockBackend {
             },
         ]
     }
+
     fn query(
         &self,
         query: Query,
@@ -123,18 +124,23 @@ impl Backend for MockBackend {
         }))
     }
 }
+
 fn name(id: usize) -> &'static str {
     NAMES[id % NAMES.len()]
 }
+
 fn region(id: usize) -> &'static str {
     REGIONS[(id / 3) % REGIONS.len()]
 }
+
 fn amount(id: usize) -> Option<f64> {
     (!id.is_multiple_of(17)).then_some(((id * 7919) % 90000) as f64 / 100.)
 }
+
 fn active(id: usize) -> bool {
     !id.is_multiple_of(3)
 }
+
 fn schema(nested: bool) -> SchemaRef {
     let mut fields = vec![
         Field::new("id", DataType::Int64, false),
@@ -164,6 +170,7 @@ fn schema(nested: bool) -> SchemaRef {
     }
     Arc::new(Schema::new(fields))
 }
+
 struct MockCursor {
     schema: SchemaRef,
     ids: Vec<usize>,
@@ -175,9 +182,11 @@ impl BatchCursor for MockCursor {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
+
     fn total_rows(&self) -> Option<usize> {
         Some(self.ids.len())
     }
+
     fn next_batch(&mut self) -> Result<Option<RecordBatch>, QueryError> {
         self.cancellation.check()?;
         if self.offset == self.ids.len() {
@@ -247,6 +256,7 @@ impl BatchCursor for MockCursor {
 mod tests {
     use super::*;
     use rowglide_app::{Preview, Sort};
+
     #[test]
     fn sorting_precedes_preview_limit_and_nulls_stay_last() -> Result<(), Box<dyn std::error::Error>>
     {
@@ -296,6 +306,7 @@ mod tests {
         }
         Ok(())
     }
+
     #[test]
     fn cancellation_empty_schema_and_sql_errors() -> Result<(), Box<dyn std::error::Error>> {
         let cancel = Cancellation::default();

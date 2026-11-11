@@ -127,6 +127,7 @@ impl Preview {
         }
         Ok(preview)
     }
+
     pub fn row(&self, mut row: usize) -> Option<(&RecordBatch, usize)> {
         for batch in &self.batches {
             if row < batch.num_rows() {

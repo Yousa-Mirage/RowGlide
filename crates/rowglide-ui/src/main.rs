@@ -4,16 +4,19 @@ mod grid;
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 use std::sync::Arc;
+
 fn main() {
     application().with_assets(assets::Assets).run(|cx| {
         init(cx);
         Theme::change(ThemeMode::Light, None, cx);
+
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
                 cx.quit();
             }
         })
         .detach();
+
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                 None,
@@ -27,12 +30,14 @@ fn main() {
             }),
             ..Default::default()
         };
+
         if let Err(error) = open_window(options, cx, |window, cx| {
             cx.new(|cx| app::Workspace::new(Arc::new(rowglide_core::MockBackend), window, cx))
         }) {
             eprintln!("Cannot open Rowglide: {error}");
             cx.quit();
         }
+
         cx.activate(true);
     });
 }
