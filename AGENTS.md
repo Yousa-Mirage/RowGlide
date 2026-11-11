@@ -24,6 +24,7 @@ rowglide-ui --------------------> rowglide-core
 - `core` 不依赖 GPUI、gpui-kit 或具体查询引擎；可以依赖 Arrow。
 - `backend` 不依赖 UI，不持有 GUI 对象。
 - `ui` 的入口负责构造并注入后端。组件和交互逻辑通过 `core` 接口工作，不直接调用具体引擎。
+- 打开的文件使用 gpui-kit Folder Tabs 在顶部展示与切换，不使用左侧文件侧栏。
 - 包之间不得出现循环依赖。不要另建 app crate，除非开发需求发生明确变化。
 - 实现前核实 gpui-kit 的实际上游地址、API、版本和平台支持，不用其他组件库静默替代。
 

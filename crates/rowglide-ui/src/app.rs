@@ -7,22 +7,13 @@ use gpui_kit::component::{
     ActiveTheme, Sizable,
     button::{Button, ButtonVariants},
     input::{Editor, EditorState, Input, InputState},
-    resizable::{HandleEdge, resize_handle},
+    tab::{Tab, TabBar},
     table::{DataTable, TableEvent, TableState},
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use rowglide_core::{Backend, Cancellation, Preview, Query, Source};
 use std::{collections::HashSet, sync::Arc, time::Instant};
-
-#[derive(Clone)]
-struct ResizeSidebar;
-
-impl Render for ResizeSidebar {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        Empty
-    }
-}
 
 pub struct Workspace {
     backend: Arc<dyn Backend>,
@@ -39,8 +30,6 @@ pub struct Workspace {
     status: String,
     error: bool,
     sql_open: bool,
-    sidebar_width: Pixels,
-    sidebar_collapsed: bool,
     selected: Option<(String, ArrayRef, usize)>,
     expanded: HashSet<String>,
 }
@@ -107,8 +96,6 @@ impl Workspace {
             status: "Ready".into(),
             error: false,
             sql_open: false,
-            sidebar_width: px(218.),
-            sidebar_collapsed: false,
             selected: None,
             expanded: HashSet::new(),
         };
@@ -257,124 +244,41 @@ impl Drop for Workspace {
     }
 }
 impl Render for Workspace {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let sidebar_max = (window.viewport_size().width - px(560.)).clamp(px(180.), px(480.));
-        let sidebar_width = self.sidebar_width.min(sidebar_max);
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let border = rgb(0xe4e8e7);
         let source = &self.sources[self.query.source];
-        let sidebar = div()
-            .relative()
-            .w(sidebar_width)
-            .flex_shrink_0()
-            .h_full()
-            .bg(rgb(0xf5f7f6))
-            .border_r_1()
-            .border_color(border)
-            .flex()
-            .flex_col()
-            .p_4()
-            .gap_2()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .mb_5()
-                    .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("▦  Rowglide"),
-                    )
-                    .child(
-                        Button::new("collapse-files")
-                            .small()
-                            .ghost()
-                            .label("‹")
-                            .tooltip("Collapse file sidebar")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.sidebar_collapsed = true;
-                                cx.notify();
-                            })),
-                    ),
+        let tabs = TabBar::new("open-file-tabs")
+            .folder()
+            .selected_index(
+                self.sources
+                    .iter()
+                    .position(|source| source.id == self.query.source)
+                    .unwrap_or(0),
             )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(rgb(0x7b8681))
-                    .mb_2()
-                    .child("WORKSPACE"),
+            .children(
+                self.sources
+                    .iter()
+                    .map(|source| Tab::new().label(source.name.clone())),
             )
-            .children(self.sources.iter().map(|source| {
-                let id = source.id;
-                div()
-                    .id(("source", id))
-                    .p_3()
-                    .rounded_lg()
-                    .cursor_pointer()
-                    .when(self.query.source == id, |s| s.bg(rgb(0xe4ede8)))
-                    .hover(|s| s.bg(rgb(0xeaf0ed)))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.query = Query {
-                            source: id,
-                            ..Default::default()
-                        };
-                        this.search.update(cx, |s, cx| s.set_value("", window, cx));
-                        this.run(window, cx);
-                    }))
-                    .child(div().text_sm().child(source.name.clone()))
-                    .child(
-                        div()
-                            .mt_1()
-                            .text_xs()
-                            .text_color(rgb(0x7b8681))
-                            .child(format!("{} · {} rows", source.format, source.rows)),
-                    )
-            }))
-            .child(div().flex_1())
-            .child(
-                div()
-                    .p_3()
-                    .rounded_lg()
-                    .border_1()
-                    .border_color(border)
-                    .text_xs()
-                    .text_color(rgb(0x6c7b73))
-                    .child("Demo workspace")
-                    .child(
-                        div()
-                            .mt_2()
-                            .child("Explore sample data. Local file support is coming next."),
-                    ),
-            );
-        let sidebar = sidebar.child(
-            resize_handle("file-sidebar-resize", Axis::Horizontal)
-                .inside(HandleEdge::Trailing)
-                .on_drag(ResizeSidebar, |drag, _, _, cx| cx.new(|_| drag.clone())),
-        );
-        let collapsed_sidebar = div()
-            .w(px(52.))
-            .h_full()
-            .flex_shrink_0()
-            .bg(rgb(0xf5f7f6))
-            .border_r_1()
-            .border_color(border)
-            .p_2()
-            .child(
-                Button::new("expand-files")
-                    .small()
-                    .ghost()
-                    .label("›")
-                    .tooltip("Expand file sidebar")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.sidebar_collapsed = false;
-                        cx.notify();
-                    })),
-            );
+            .on_click(cx.listener(|this, index: &usize, window, cx| {
+                let Some(source) = this.sources.get(*index) else {
+                    return;
+                };
+                if source.id == this.query.source {
+                    return;
+                }
+                this.query = Query {
+                    source: source.id,
+                    ..Default::default()
+                };
+                this.search
+                    .update(cx, |state, cx| state.set_value("", window, cx));
+                this.run(window, cx);
+            }));
         let mut content = div()
             .flex_1()
             .min_w_0()
-            .h_full()
+            .min_h_0()
             .flex()
             .flex_col()
             .child(
@@ -568,26 +472,20 @@ impl Render for Workspace {
         );
         div()
             .id("workspace")
-            .on_drag_move::<ResizeSidebar>(cx.listener(
-                |this, event: &DragMoveEvent<ResizeSidebar>, window, cx| {
-                    if !this.sidebar_collapsed {
-                        let max =
-                            (window.viewport_size().width - px(560.)).clamp(px(180.), px(480.));
-                        this.sidebar_width = event.event.position.x.clamp(px(180.), max);
-                        cx.notify();
-                    }
-                },
-            ))
             .size_full()
             .bg(rgb(0xffffff))
             .text_color(rgb(0x263b32))
             .font_family(".SystemUIFont")
             .flex()
-            .child(if self.sidebar_collapsed {
-                collapsed_sidebar.into_any_element()
-            } else {
-                sidebar.into_any_element()
-            })
+            .flex_col()
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .bg(rgb(0xf5f7f6))
+                    .pt_2()
+                    .px_3()
+                    .child(tabs),
+            )
             .child(content)
     }
 }

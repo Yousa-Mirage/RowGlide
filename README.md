@@ -15,7 +15,7 @@ sh scripts/bundle-macos.sh
 open target/Rowglide.app
 ```
 
-The current prototype uses **sample data only**. Sidebar filenames are demo datasets; no local files are opened. It includes a virtualized table, resizable columns, scalar-column sorting, name/city filtering, a List/Struct inspector, and a SQL editor with two supported demo queries:
+The current prototype uses **sample data only**. Folder tabs represent demo datasets; no local files are opened. It includes folder-style file tabs, a virtualized table, resizable columns, scalar-column sorting, name/city filtering, a List/Struct inspector, and a SQL editor with two supported demo queries:
 
 ```sql
 SELECT * FROM current_file LIMIT 100;
