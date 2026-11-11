@@ -8,3 +8,6 @@ publish.workspace = true
 rowglide-core.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true
+
+[lints]
+workspace = true

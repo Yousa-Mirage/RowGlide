@@ -60,3 +60,10 @@ rowglide-ui --------------------> rowglide-core
 - UI 验证覆盖空数据、加载、错误、取消、宽表、长文本和嵌套数据。自动检查通过不等于视觉验收通过。
 - 未运行的检查必须明确说明，不能报告为通过。
 - 改变架构、阶段范围或已确认选择时同步更新 `dev.md`。未经用户要求，不扩大到数据编辑、云端服务或完整数据库管理功能。
+
+
+## 开发命令与严格检查
+
+- 使用 `just dev` 启动开发程序，`just test` 运行测试，`just lint` 执行 Clippy，`just ci` 执行完整本地检查；`just` 列出所有命令。
+- 项目代码和测试均禁止调用 `.unwrap()` 与 `.expect()`。通过 workspace Clippy lints 强制执行，各 crate 必须继承 `[lints] workspace = true`，不得用局部 allow 绕过。
+- Clippy 使用 `--workspace --all-targets -- -D warnings`，所有警告视为错误。可恢复错误通过 Result 传播或明确处理，不能只将 unwrap / expect 改写为 panic。

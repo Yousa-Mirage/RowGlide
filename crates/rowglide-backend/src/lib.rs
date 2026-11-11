@@ -248,7 +248,8 @@ mod tests {
     use super::*;
     use rowglide_core::{Preview, Sort};
     #[test]
-    fn sorting_precedes_preview_limit_and_nulls_stay_last() {
+    fn sorting_precedes_preview_limit_and_nulls_stay_last() -> Result<(), Box<dyn std::error::Error>>
+    {
         let cancel = Cancellation::default();
         let query = Query {
             sort: Some(Sort {
@@ -257,8 +258,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let preview =
-            Preview::collect(MockBackend.query(query, cancel.clone()).unwrap(), &cancel).unwrap();
+        let preview = Preview::collect(MockBackend.query(query, cancel.clone())?, &cancel)?;
         assert_eq!(preview.rows, 8192);
         assert_eq!(preview.total_rows, Some(50000));
         assert!(preview.truncated);
@@ -266,7 +266,7 @@ mod tests {
             .column(0)
             .as_any()
             .downcast_ref::<Int64Array>()
-            .unwrap();
+            .ok_or("id column must be Int64")?;
         assert_eq!(ids.value(0), 60000);
         for descending in [false, true] {
             let query = Query {
@@ -276,15 +276,15 @@ mod tests {
                 }),
                 ..Default::default()
             };
-            let mut cursor = MockBackend.query(query, cancel.clone()).unwrap();
+            let mut cursor = MockBackend.query(query, cancel.clone())?;
             let mut seen_null = false;
-            while let Some(batch) = cursor.next_batch().unwrap() {
+            while let Some(batch) = cursor.next_batch()? {
                 use arrow_array::Array;
                 let values = batch
                     .column(3)
                     .as_any()
                     .downcast_ref::<Float64Array>()
-                    .unwrap();
+                    .ok_or("amount column must be Float64")?;
                 for i in 0..values.len() {
                     if values.is_null(i) {
                         seen_null = true;
@@ -294,24 +294,23 @@ mod tests {
                 }
             }
         }
+        Ok(())
     }
     #[test]
-    fn cancellation_empty_schema_and_sql_errors() {
+    fn cancellation_empty_schema_and_sql_errors() -> Result<(), Box<dyn std::error::Error>> {
         let cancel = Cancellation::default();
-        let mut cursor = MockBackend.query(Query::default(), cancel.clone()).unwrap();
+        let mut cursor = MockBackend.query(Query::default(), cancel.clone())?;
         cancel.cancel();
         assert!(matches!(cursor.next_batch(), Err(QueryError::Cancelled)));
-        let mut empty = MockBackend
-            .query(
-                Query {
-                    source: 2,
-                    ..Default::default()
-                },
-                Cancellation::default(),
-            )
-            .unwrap();
+        let mut empty = MockBackend.query(
+            Query {
+                source: 2,
+                ..Default::default()
+            },
+            Cancellation::default(),
+        )?;
         assert_eq!(empty.schema().fields().len(), 7);
-        assert!(empty.next_batch().unwrap().is_none());
+        assert!(empty.next_batch()?.is_none());
         assert!(
             MockBackend
                 .query(
@@ -323,5 +322,6 @@ mod tests {
                 )
                 .is_err()
         );
+        Ok(())
     }
 }

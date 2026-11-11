@@ -24,12 +24,15 @@ impl TableDelegate for Grid {
         self.preview.as_ref().map_or(0, |p| p.rows)
     }
     fn column(&self, index: usize, _: &App) -> Column {
-        let field = &self
+        let Some(field) = self
             .preview
             .as_ref()
-            .expect("table only requests existing columns")
-            .schema
-            .fields()[index];
+            .and_then(|preview| preview.schema.fields().get(index))
+        else {
+            return Column::new(format!("unavailable-{index}"), "Unavailable")
+                .selectable(false)
+                .movable(false);
+        };
         let mut column = Column::new(
             field.name().clone(),
             format!(

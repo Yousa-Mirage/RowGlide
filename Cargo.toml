@@ -14,5 +14,9 @@ gpui-kit = "=0.9.1"
 arrow-array = "57"
 arrow-schema = "57"
 
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
 [profile.dev]
 debug = 0

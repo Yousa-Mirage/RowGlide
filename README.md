@@ -40,3 +40,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 See [dev.md](dev.md) for progress, known limitations and the next stages. Version management uses **jj**; each independent modification is its own change.
+
+
+## Just commands
+
+Run `just` to list commands: `just dev`, `just check`, `just test`, `just fmt`,
+`just fmt-check`, `just lint`, `just ci`, and `just bundle-macos`.
+`just ci` runs formatting, compilation, tests and Clippy. Workspace Clippy rules
+ban `unwrap()` and `expect()` in both application and test code; `just lint`
+treats every Clippy warning as an error.
