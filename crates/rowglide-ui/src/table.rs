@@ -1,6 +1,7 @@
 //! Table adapter for typed previews and column-sort events.
 
 use crate::cells;
+use arrow_schema::DataType;
 use gpui_kit::component::{
     ActiveTheme,
     table::{Column, ColumnSort, TableDelegate, TableState},
@@ -54,8 +55,17 @@ impl TableDelegate for Grid {
         .width(px(if index == 1 { 200. } else { 150. }))
         .movable(false);
 
-        // Only the first five scalar columns support sorting in the mock schema.
-        if self.sortable && index < 5 {
+        // Nested values have no column-header ordering; SQL can extract a scalar.
+        if self.sortable
+            && !matches!(
+                field.data_type(),
+                DataType::List(_)
+                    | DataType::LargeList(_)
+                    | DataType::FixedSizeList(_, _)
+                    | DataType::Struct(_)
+                    | DataType::Map(_, _)
+            )
+        {
             column = column.sort(match self.sort.filter(|sort| sort.column == index) {
                 Some(sort) if sort.descending => ColumnSort::Descending,
                 Some(_) => ColumnSort::Ascending,
@@ -111,8 +121,6 @@ impl TableDelegate for Grid {
             .unwrap_or_default();
         let color = if value == "null" {
             cx.theme().muted_foreground
-        } else if col >= 5 {
-            rgb(0x52776a).into()
         } else {
             cx.theme().foreground
         };

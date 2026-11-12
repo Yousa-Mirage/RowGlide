@@ -159,7 +159,7 @@ mod tests {
             id,
             name: format!("{id}.parquet"),
             format: "PARQUET",
-            rows: 1,
+            rows: Some(1),
             description: "Test",
         })
     }

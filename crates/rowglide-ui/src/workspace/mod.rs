@@ -1,6 +1,7 @@
 //! Workspace state, event wiring, and top-level layout.
 
 mod controls;
+mod files;
 mod inspector;
 mod query;
 mod state;
@@ -37,6 +38,7 @@ pub(crate) struct Workspace {
     // Background request lifecycle and status.
     task: Option<Task<()>>,
     cancellation: Cancellation,
+    opening_cancel: Cancellation,
     generation: u64,
     busy: bool,
     status: String,
@@ -71,7 +73,7 @@ impl Workspace {
             .col_movable(false)
         });
 
-        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Filter name or city…"));
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Filter text columns…"));
         let limit = cx.new(|cx| InputState::new(window, cx).placeholder("All"));
         let offset = cx.new(|cx| InputState::new(window, cx).default_value("0"));
         let sql = cx.new(|cx| {
@@ -123,6 +125,7 @@ impl Workspace {
             _subscriptions: subscriptions,
             task: None,
             cancellation: Cancellation::default(),
+            opening_cancel: Cancellation::default(),
             generation: 0,
             busy: false,
             status: "Ready".into(),
@@ -166,13 +169,24 @@ impl Workspace {
 impl Drop for Workspace {
     fn drop(&mut self) {
         self.cancellation.cancel();
+        self.opening_cancel.cancel();
     }
 }
 
 impl Render for Workspace {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.tabs.is_empty() {
-            return div().child("No files open").into_any_element();
+            return div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap_3()
+                .child("Open a Parquet or CSV file")
+                .child(self.render_open_button(cx))
+                .child(div().text_sm().child(self.status.clone()))
+                .into_any_element();
         }
         let mut content = div()
             .flex_1()
@@ -214,7 +228,11 @@ impl Render for Workspace {
                     .flex_shrink_0()
                     .bg(rgb(0xf5f7f6))
                     .px_3()
-                    .child(self.render_tabs(cx)),
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(div().flex_1().min_w_0().child(self.render_tabs(cx)))
+                    .child(self.render_open_button(cx)),
             )
             .child(content)
             .into_any_element()

@@ -96,20 +96,45 @@ impl Workspace {
             )
     }
 
-    // Demo SQL editor; execution remains coordinated by Workspace.
+    // SQL editor; execution remains coordinated by Workspace.
     pub(super) fn render_sql(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        div().p_4().border_b_1().border_color(rgb(0xe4e8e7)).bg(rgb(0xf9faf9))
+        div()
+            .p_4()
+            .border_b_1()
+            .border_color(rgb(0xe4e8e7))
+            .bg(rgb(0xf9faf9))
             .child(
-                div().flex().items_center().justify_between().mb_3()
-                    .child(div().text_xs().text_color(cx.theme().muted_foreground).child("SQL · DEMO PRESETS ONLY"))
-                    .child(Button::new("run").small().primary().label("Run query")
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.run_sql(window, cx);
-                        }))),
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .mb_3()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child("SQL · current_file"),
+                    )
+                    .child(
+                        Button::new("run")
+                            .small()
+                            .primary()
+                            .label("Run query")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.run_sql(window, cx);
+                            })),
+                    ),
             )
             .child(Editor::new(&self.sql).h(px(95.)))
-            .child(div().mt_2().text_xs().text_color(cx.theme().muted_foreground)
-                .child("Supported: SELECT * FROM current_file LIMIT 100;   /   SELECT * FROM current_file WHERE false;"))
+            .child(
+                div()
+                    .mt_2()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(
+                        "Query current_file with SELECT or WITH. Results show a bounded preview.",
+                    ),
+            )
     }
 
     // Bottom status bar: query status, cancellation, and sample-data label.
@@ -169,7 +194,7 @@ impl Workspace {
                 div()
                     .text_xs()
                     .text_color(rgb(0x6c7b73))
-                    .child("SAMPLE DATA"),
+                    .child("LOCAL FILE"),
             )
     }
 }

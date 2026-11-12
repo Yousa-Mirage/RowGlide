@@ -15,19 +15,40 @@ sh scripts/bundle-macos.sh
 open target/Rowglide.app
 ```
 
-The current prototype uses **sample data only**. Folder tabs represent demo datasets; no local files are opened. It includes folder-style file tabs, a virtualized table, resizable columns, scalar-column sorting, name/city filtering, a List/Struct inspector, and a SQL editor with two supported demo queries:
+Use **Open files…** to select local `.parquet`, `.pq`, or `.csv` files. Files open
+in folder tabs with independent Browse and SQL sessions. Browse supports text
+search across string columns, scalar sorting, Limit and Offset. SQL supports a
+single SELECT/WITH query against `current_file`, including aggregates and joins.
 
-```sql
-SELECT * FROM current_file LIMIT 100;
-SELECT * FROM current_file WHERE false;
-```
+DuckDB scans files directly and streams typed Arrow batches through a one-batch
+channel. Preview retention is capped at 8,192 rows / 16 MiB, with an 8,193-row
+query limit to detect truncation. Sorting and filtering precede this limit; total
+row counts remain unknown instead of requiring a full COUNT scan. The GUI shows
+the bounded preview once collected; incremental display and unlimited scrolling
+are not implemented yet.
 
-Queries run off the UI thread, with cancellation and stale-result rejection. Preview retention is capped at 8,192 rows / 16 MiB; this is not yet an infinite-loading result cache. Sorting and filtering happen before the preview limit.
+Each query uses a temporary in-memory connection, at most four execution threads,
+a 512 MB DuckDB memory limit, and a private temporary spill directory capped at
+2 GB. These engine limits are not process-wide memory guarantees. A shared gate
+serializes query engines. Cancellation interrupts DuckDB, and cursor drop joins
+the worker and releases its connection and spill directory.
+
+CSV delimiter/header/type inference uses a bounded sample (20,480 rows). Manual
+CSV options and non-UTF-8 input conversion are not implemented; parsing failures
+are displayed. SQL is validated as one query using sqlparser's DuckDB dialect;
+some DuckDB-specific syntax may not yet be accepted. This is a local SQL viewer,
+not a sandbox for untrusted SQL. Extensions are bundled for Parquet; automatic
+extension downloading is disabled.
+
+The Rust DuckDB dependency is pinned to `1.20000.1` with bundled native code and
+Parquet support; Arrow uses version 60. Building requires a C++ toolchain and the
+first build takes longer. The deterministic mock backend remains available for
+tests but is no longer the application's default.
 
 ## Workspace
 
 - `rowglide-app`: typed Arrow results, query contracts and cancellation.
-- `rowglide-core`: deterministic mock backend and pull-based batches.
+- `rowglide-core`: DuckDB file queries, bounded streaming, and a mock backend for tests.
 - `rowglide-ui`: GPUI Kit components, interactions and application entry point.
 
 ## UI layout
@@ -38,6 +59,7 @@ Queries run off the UI thread, with cancellation and stale-result rejection. Pre
 - `workspace/mod.rs`: shared view state, event wiring, and main layout.
 - `workspace/controls.rs`: file tabs, browse toolbar, SQL editor, and status bar.
 - `workspace/query.rs`: query execution, cancellation, and session switching.
+- `workspace/files.rs`: native file selection and background schema inspection.
 - `workspace/state.rs`: per-file browse/SQL state and bounded result cache.
 - `workspace/inspector.rs`: selected-cell panel and nested-value tree.
 - `table.rs`: virtualized table delegate and sort events.

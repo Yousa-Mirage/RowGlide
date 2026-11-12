@@ -20,8 +20,12 @@ publish = false
 rowglide-app = { path = "crates/rowglide-app" }
 rowglide-core = { path = "crates/rowglide-core" }
 gpui-kit = "=0.9.1"
-arrow-array = "57"
-arrow-schema = "57"
+duckdb = { version = "=1.20000.1", features = ["bundled", "parquet"] }
+arrow-cast = "60"
+tempfile = "3"
+sqlparser = "=0.64.0"
+arrow-array = "60"
+arrow-schema = "60"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

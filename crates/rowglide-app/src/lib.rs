@@ -2,6 +2,7 @@
 
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
+use std::path::Path;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -12,7 +13,7 @@ pub struct Source {
     pub id: usize,
     pub name: String,
     pub format: &'static str,
-    pub rows: usize,
+    pub rows: Option<usize>,
     pub description: &'static str,
 }
 
@@ -30,14 +31,13 @@ pub struct Query {
     pub sort: Option<Sort>,
 
     /// Browse row limit, applied after filtering and sorting; None is unlimited.
-
     /// SQL requests use their own query semantics instead.
     pub limit: Option<usize>,
 
     /// Explicit browse offset, not an automatic pagination strategy.
     pub offset: usize,
 
-    /// Only explicitly supported demo SQL is accepted by the mock backend.
+    /// SQL is executed in the current_file context; mock implementations accept presets only.
     pub sql: Option<String>,
 }
 
@@ -64,6 +64,7 @@ pub enum QueryError {
     Cancelled,
     Invalid(String),
     Data(arrow_schema::ArrowError),
+    Backend(String),
 }
 
 impl std::fmt::Display for QueryError {
@@ -71,6 +72,7 @@ impl std::fmt::Display for QueryError {
         match self {
             Self::Cancelled => write!(f, "Query cancelled"),
             Self::Invalid(message) => f.write_str(message),
+            Self::Backend(message) => f.write_str(message),
             Self::Data(error) => write!(f, "Cannot build data batch: {error}"),
         }
     }
@@ -94,6 +96,12 @@ pub trait BatchCursor: Send {
 /// Blocking data operations; callers must execute queries off the UI thread.
 pub trait Backend: Send + Sync {
     fn sources(&self) -> Vec<Source>;
+    /// Register and inspect a local file on a background worker.
+    fn open(&self, _path: &Path, _cancel: Cancellation) -> Result<Source, QueryError> {
+        Err(QueryError::Invalid(
+            "This backend cannot open local files".into(),
+        ))
+    }
     fn query(
         &self,
         query: Query,

@@ -35,7 +35,13 @@ fn main() {
         };
 
         if let Err(error) = open_window(options, cx, |window, cx| {
-            cx.new(|cx| workspace::Workspace::new(Arc::new(rowglide_core::MockBackend), window, cx))
+            cx.new(|cx| {
+                workspace::Workspace::new(
+                    Arc::new(rowglide_core::DuckDbBackend::default()),
+                    window,
+                    cx,
+                )
+            })
         }) {
             eprintln!("Cannot open Rowglide: {error}");
             cx.quit();

@@ -2,7 +2,7 @@
 default:
     @just --list
 
-# Run the native application with the mock backend.
+# Run the native application with DuckDB.
 dev:
     cargo run -p rowglide-ui --bin rowglide
 
@@ -18,3 +18,18 @@ lint:
 # Build the local macOS development bundle (no signing or installation).
 bundle-macos:
     sh scripts/bundle-macos.sh
+
+# Compile all workspace targets.
+check:
+    cargo check --workspace --all-targets
+
+# Format Rust sources.
+fmt:
+    cargo fmt --all
+
+# Verify source formatting.
+fmt-check:
+    cargo fmt --all -- --check
+
+# Run the complete local verification suite.
+ci: fmt-check check test lint

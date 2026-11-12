@@ -71,7 +71,7 @@ impl Workspace {
         self.active_tab_mut().result_mut().initialized = true;
         self.busy = true;
         self.error = false;
-        self.status = "Loading demo data…".into();
+        self.status = "Loading data…".into();
         self.selected = None;
 
         self.table.update(cx, |table, cx| {
@@ -153,7 +153,7 @@ impl Workspace {
     }
 
     // Save drafts separately from applied queries, including invalid input.
-    fn save_session(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn save_session(&mut self, cx: &mut Context<Self>) {
         if self.busy {
             self.cancel(cx);
         }
@@ -184,7 +184,7 @@ impl Workspace {
         super::state::trim_cache(&mut self.tabs);
     }
 
-    fn restore_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn restore_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.generation += 1;
         self.query = self.active_tab().active_query();
         self.sql_open = self.active_tab().mode == TabMode::Sql;

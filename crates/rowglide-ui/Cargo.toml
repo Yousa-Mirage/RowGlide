@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+arrow-cast.workspace = true
 rowglide-app.workspace = true
 rowglide-core.workspace = true
 gpui-kit.workspace = true
