@@ -132,8 +132,12 @@ treats every Clippy warning as an error.
 
 ## Build configuration
 
-Rust 1.99 or newer is the current supported development baseline. Project metadata is defined only in the root Cargo.toml. Each crate
-inherits build settings and strict workspace lints. Project code forbids
+Rust 1.99 or newer is the current supported development baseline. Root Cargo.toml
+stores project information in `[workspace.metadata.project]`; these values are
+descriptive metadata, not automatically applied Cargo package fields.
+`[workspace.package]` contains only the version, edition, Rust version and publish
+settings actually inherited by the crates. Each crate also inherits strict
+workspace lints. Project code forbids
 unsafe code, unnecessary qualifications and unreachable public items.
 
 Build an optimized executable with `cargo build --release -p rowglide-app`. The
