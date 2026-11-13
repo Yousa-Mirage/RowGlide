@@ -30,6 +30,7 @@ tempfile = "3"
 sqlparser = "=0.64.0"
 arrow-array = "60"
 arrow-schema = "60"
+arrow-ipc = "60"
 async-channel = "2.5"
 
 # Lint configuration

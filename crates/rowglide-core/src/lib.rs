@@ -18,3 +18,6 @@ pub use pagination::{BrowsePage, PageResult};
 
 mod session;
 pub use session::{QuerySession, SessionEvent};
+
+mod result;
+pub use result::{QueryResult, ResultLimits, ResultPhase, ResultSnapshot};

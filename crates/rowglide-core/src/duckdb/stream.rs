@@ -158,13 +158,16 @@ impl BatchCursor for Cursor {
 }
 
 impl Drop for Cursor {
-    /// Cancel the request, disconnect the receiver and join the query worker.
+    /// Cancel unfinished execution, disconnect the receiver and join the query worker.
+    /// Successful EOF must not set the caller's cancellation token.
     ///
     /// Disconnecting before joining releases a producer blocked on the bounded channel.
     /// Joining may block until DuckDB responds to interruption; drop this cursor off
     /// the GUI thread. Worker panics are ignored during cleanup.
     fn drop(&mut self) {
-        self.cancel.cancel();
+        if !self.ended {
+            self.cancel.cancel();
+        }
         // Disconnect first so a producer blocked by backpressure can exit.
         self.receiver.take();
         if let Some(worker) = self.worker.take() {
