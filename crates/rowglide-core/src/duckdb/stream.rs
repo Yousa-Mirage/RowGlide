@@ -114,8 +114,8 @@ impl Cursor {
                 Ok(message) => return Ok(message),
                 Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => {
-                    return Err(engine::error(
-                        "Query worker ended without a completion message",
+                    return Err(QueryError::Backend(
+                        "Query worker ended without a completion message".into(),
                     ));
                 }
             }
@@ -151,7 +151,7 @@ impl BatchCursor for Cursor {
                 self.ended = true;
                 Err(error)
             }
-            Message::Schema(_) => Err(engine::error("Unexpected result schema")),
+            Message::Schema(_) => Err(QueryError::Backend("Unexpected result schema".into())),
         }
     }
 }
@@ -214,7 +214,7 @@ pub(super) fn start(
             Ok(Box::new(cursor))
         }
         Message::Error(error) => Err(error),
-        _ => Err(engine::error("Query did not provide a schema")),
+        _ => Err(QueryError::Backend("Query did not provide a schema".into())),
     }
 }
 
@@ -241,21 +241,62 @@ fn produce(
     cancel.check()?;
     let mut statement = conn.prepare(&sql)?;
     let batches = statement.stream_arrow(params_from_iter(params.iter()))?;
-    sender
-        .send(Message::Schema(batches.get_schema()))
-        .map_err(engine::error)?;
+    send(sender, Message::Schema(batches.get_schema()))?;
     for batch in batches {
         cancel.check()?;
         let batch = batch?;
         // Avoid retaining a single pathological batch beyond the preview budget.
         if batch.get_array_memory_size() > 16 * 1024 * 1024 {
-            return Err(engine::error(
-                "A result batch exceeds the 16 MiB memory budget; reduce Limit or select smaller values",
+            return Err(QueryError::Invalid(
+                "A result batch exceeds the 16 MiB memory budget; reduce Limit or select smaller values".into(),
             ));
         }
-        if sender.send(Message::Batch(batch)).is_err() {
-            return Ok(());
+        send(sender, Message::Batch(batch))?;
+    }
+    send(sender, Message::End)
+}
+
+/// Send one protocol message with backpressure, treating a departed consumer as cancellation.
+/// Do not retain the failed send's payload; dropping it releases any Arrow buffers.
+fn send(sender: &SyncSender<Message>, message: Message) -> Result<(), QueryError> {
+    sender.send(message).map_err(|_| QueryError::Cancelled)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cursor, Message, send};
+    use crate::{BatchCursor, Cancellation, QueryError};
+    use arrow_array::RecordBatch;
+    use arrow_schema::Schema;
+    use std::sync::{Arc, mpsc};
+
+    /// Losing the consumer is cancellation at every send stage, including schema and EOF.
+    #[test]
+    fn departed_consumer_cancels_all_send_stages() {
+        let schema = Arc::new(Schema::empty());
+        for message in [
+            Message::Schema(schema.clone()),
+            Message::Batch(RecordBatch::new_empty(schema)),
+            Message::End,
+        ] {
+            let (sender, receiver) = mpsc::sync_channel(1);
+            drop(receiver);
+            assert!(matches!(send(&sender, message), Err(QueryError::Cancelled)));
         }
     }
-    sender.send(Message::End).map_err(engine::error)
+
+    /// Losing the producer without a terminal event is a failure, never successful EOF.
+    #[test]
+    fn departed_producer_is_not_completion() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        drop(sender);
+        let mut cursor = Cursor {
+            schema: Arc::new(Schema::empty()),
+            receiver: Some(receiver),
+            cancel: Cancellation::default(),
+            worker: None,
+            ended: false,
+        };
+        assert!(matches!(cursor.next_batch(), Err(QueryError::Backend(_))));
+    }
 }

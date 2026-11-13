@@ -6,7 +6,7 @@ use arrow_schema::SchemaRef;
 use duckdb::{Config, Connection};
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, TryLockError},
+    sync::{Arc, Mutex, MutexGuard, TryLockError},
     thread,
     time::Duration,
 };
@@ -38,10 +38,14 @@ pub struct DuckDbBackend {
     gate: Arc<Mutex<()>>,
 }
 
-/// Format an application message or non-ownable synchronization failure.
-/// Owned engine, Arrow and I/O errors propagate through typed QueryError conversions.
-pub(super) fn error(error: impl std::fmt::Display) -> QueryError {
-    QueryError::Backend(error.to_string())
+impl DuckDbBackend {
+    /// Lock the file registry, reporting poison without retaining a borrowed lock guard.
+    /// Typed I/O and engine errors bypass this boundary and propagate unchanged.
+    fn registry(&self) -> Result<MutexGuard<'_, Vec<FileSource>>, QueryError> {
+        self.files
+            .lock()
+            .map_err(|_| QueryError::Backend("File registry lock was poisoned".into()))
+    }
 }
 
 /// Open an in-memory DuckDB connection with bounded execution resources.
@@ -89,12 +93,14 @@ pub(super) fn register(conn: &Connection, path: &Path, format: &str) -> Result<(
 pub(super) fn lock_engine<'a>(
     gate: &'a Mutex<()>,
     cancel: &Cancellation,
-) -> Result<std::sync::MutexGuard<'a, ()>, QueryError> {
+) -> Result<MutexGuard<'a, ()>, QueryError> {
     loop {
         cancel.check()?;
         match gate.try_lock() {
             Ok(guard) => return Ok(guard),
-            Err(TryLockError::Poisoned(_)) => return Err(error("Query worker failed")),
+            Err(TryLockError::Poisoned(_)) => {
+                return Err(QueryError::Backend("Query worker failed".into()));
+            }
             Err(TryLockError::WouldBlock) => thread::sleep(Duration::from_millis(10)),
         }
     }
@@ -123,7 +129,9 @@ impl Backend for DuckDbBackend {
         cancel.check()?;
         let path = path.canonicalize()?;
         if !path.is_file() {
-            return Err(error("Select a regular CSV or Parquet file"));
+            return Err(QueryError::Invalid(
+                "Select a regular CSV or Parquet file".into(),
+            ));
         }
         let format = match path
             .extension()
@@ -133,15 +141,13 @@ impl Backend for DuckDbBackend {
         {
             Some("parquet" | "pq") => "PARQUET",
             Some("csv") => "CSV",
-            _ => return Err(error("Supported file types: .parquet, .pq, .csv")),
+            _ => {
+                return Err(QueryError::Invalid(
+                    "Supported file types: .parquet, .pq, .csv".into(),
+                ));
+            }
         };
-        if let Some(file) = self
-            .files
-            .lock()
-            .map_err(error)?
-            .iter()
-            .find(|file| file.path == path)
-        {
+        if let Some(file) = self.registry()?.iter().find(|file| file.path == path) {
             return Ok(file.info.clone());
         }
         let _guard = lock_engine(&self.gate, &cancel)?;
@@ -152,7 +158,7 @@ impl Backend for DuckDbBackend {
         let mut statement = conn.prepare("SELECT * FROM current_file LIMIT 0")?;
         let schema = statement.stream_arrow([])?.get_schema();
         cancel.check()?;
-        let mut files = self.files.lock().map_err(error)?;
+        let mut files = self.registry()?;
         if let Some(file) = files.iter().find(|file| file.path == path) {
             return Ok(file.info.clone());
         }
@@ -186,12 +192,10 @@ impl Backend for DuckDbBackend {
     ) -> Result<Box<dyn BatchCursor>, QueryError> {
         cancel.check()?;
         let file = self
-            .files
-            .lock()
-            .map_err(error)?
+            .registry()?
             .get(query.source)
             .cloned()
-            .ok_or_else(|| error("File is no longer available"))?;
+            .ok_or_else(|| QueryError::Invalid("File is no longer available".into()))?;
         stream::start(file, query, cancel, self.gate.clone())
     }
 }

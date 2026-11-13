@@ -77,6 +77,6 @@ rowglide-app ----------------> rowglide-core
 - 使用 `just dev` 启动开发程序，`just test` 运行测试，`just lint` 执行 Clippy，`just ci` 执行完整本地检查；`just` 列出所有命令。
 - 项目代码和测试均禁止调用 `.unwrap()` 与 `.expect()`。通过 workspace Clippy lints 强制执行，各 crate 必须继承 `[lints] workspace = true`，不得用局部 allow 绕过。
 - Clippy 使用 `--workspace --all-targets -- -D warnings`，所有警告视为错误。可恢复错误通过 Result 传播或明确处理，不能只将 unwrap / expect 改写为 panic。
-- 共享错误使用 `thiserror` 定义；通过 `#[from]` / `#[source]` 保留底层原因，优先用 `?` 传播。不要提前把可拥有的底层错误转成字符串；UI 状态展示可格式化为文本。取消始终使用独立的 `QueryError::Cancelled`。
+- 共享错误使用 `thiserror` 定义；通过 `#[from]` / `#[source]` 保留底层原因，优先用 `?` 传播。不要提前把可拥有的底层错误转成字符串；UI 状态展示可格式化为文本。取消始终使用独立的 `QueryError::Cancelled`。 下层操作默认通过 `?` 传播；仅在 UI 展示、任务结束、取消归一化或资源清理边界显式处理，不为纯转发增加嵌套 match。
 
 - Workspace Rust lints 禁止 `unsafe_code`（forbid）、`unused_qualifications` 和 `unreachable_pub`（deny）；UI 内部共享项使用 `pub(crate)`，不通过 allow 绕过。

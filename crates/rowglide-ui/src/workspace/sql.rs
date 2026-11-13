@@ -2,36 +2,25 @@
 
 use super::{Workspace, state::TabMode};
 use gpui_kit::*;
-use rowglide_core::{QueryResult, ResultLimits, ResultPhase, ResultSnapshot};
+use rowglide_core::{QueryError, QueryResult, ResultLimits, ResultPhase, ResultSnapshot};
 use std::{sync::Arc, time::Duration};
 
 impl Workspace {
     /// Start continuous SQL generation and attach its cache to the active table.
-    /// Thread startup errors become visible immediately; execution errors arrive in snapshots.
-    pub(super) fn start_sql(&mut self, cx: &mut Context<Self>) {
-        match QueryResult::start(
+    /// Propagate startup errors to the query UI boundary; execution errors arrive in snapshots.
+    pub(super) fn start_sql(&mut self, cx: &mut Context<Self>) -> Result<(), QueryError> {
+        let result = QueryResult::start(
             self.backend.clone(),
             self.query.clone(),
             self.cancellation.clone(),
             ResultLimits::default(),
-        ) {
-            Ok(result) => {
-                self.table.update(cx, |table, cx| {
-                    table.delegate_mut().sql_result = Some(Arc::new(result));
-                    cx.notify();
-                });
-                self.watch_sql(cx);
-            }
-            Err(error) => {
-                self.busy = false;
-                self.error = true;
-                self.status = error.to_string();
-                self.table.update(cx, |table, cx| {
-                    table.delegate_mut().loading = false;
-                    cx.notify();
-                });
-            }
-        }
+        )?;
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().sql_result = Some(Arc::new(result));
+            cx.notify();
+        });
+        self.watch_sql(cx);
+        Ok(())
     }
 
     /// Observe the active SQL cache through the existing GPUI executor without blocking it.

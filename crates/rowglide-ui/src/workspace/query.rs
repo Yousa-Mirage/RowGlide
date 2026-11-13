@@ -3,8 +3,29 @@
 use super::state::{BrowseDraft, PageSummary, RequestKey};
 use super::{TabMode, Workspace};
 use gpui_kit::*;
-use rowglide_core::{BrowsePage, Cancellation};
+use rowglide_core::{Backend, BrowsePage, Cancellation, Preview, Query, QueryError};
 use std::time::Instant;
+
+/// Validate and collect one Browse page on a background worker.
+/// Propagate input, cancellation and backend errors unchanged to the UI boundary;
+/// navigation metadata is created only after the complete page succeeds.
+fn load_browse(
+    backend: &dyn Backend,
+    query: Query,
+    cancel: &Cancellation,
+) -> Result<(Preview, PageSummary), QueryError> {
+    let range = BrowsePage::new(
+        query.limit.unwrap_or(BrowsePage::default().limit()),
+        query.offset,
+    )?;
+    let result = range.load(backend, query, cancel)?;
+    let page = PageSummary {
+        range,
+        rows: result.preview.rows,
+        has_next: result.has_next,
+    };
+    Ok((result.preview, page))
+}
 
 impl Workspace {
     /// Capture the generation, active tab index and mode for the current request.
@@ -155,7 +176,9 @@ impl Workspace {
         });
 
         if self.sql_open {
-            self.start_sql(cx);
+            if let Err(error) = self.start_sql(cx) {
+                self.finish_query_error(error, cx);
+            }
             cx.notify();
             return;
         }
@@ -165,20 +188,7 @@ impl Workspace {
         let cancel = self.cancellation.clone();
         let work = cx.background_executor().spawn(async move {
             let started = Instant::now();
-            let result = BrowsePage::new(
-                query.limit.unwrap_or(BrowsePage::default().limit()),
-                query.offset,
-            )
-            .and_then(|range| {
-                range.load(backend.as_ref(), query, &cancel).map(|result| {
-                    let page = PageSummary {
-                        range,
-                        rows: result.preview.rows,
-                        has_next: result.has_next,
-                    };
-                    (result.preview, page)
-                })
-            });
+            let result = load_browse(backend.as_ref(), query, &cancel);
             (result, started.elapsed())
         });
 
@@ -212,19 +222,26 @@ impl Workspace {
                             }
                         });
                     }
-                    Err(error) => {
-                        this.error = true;
-                        this.status = error.to_string();
-                        this.table.update(cx, |table, cx| {
-                            table.delegate_mut().loading = false;
-                            table.delegate_mut().preview = None;
-                            table.refresh(cx);
-                        });
-                    }
+                    Err(error) => this.finish_query_error(error, cx),
                 }
                 cx.notify();
             });
         }));
+        cx.notify();
+    }
+
+    /// Handle Browse failure or SQL startup failure at the GUI boundary.
+    /// The request already cleared its old result; stop loading and show the cause.
+    /// Cancellation is a normal terminal state and does not use the error color.
+    /// Streamed SQL failures use snapshots instead so committed rows remain available.
+    fn finish_query_error(&mut self, error: QueryError, cx: &mut Context<Self>) {
+        self.busy = false;
+        self.error = !matches!(error, QueryError::Cancelled);
+        self.status = error.to_string();
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().loading = false;
+            table.refresh(cx);
+        });
         cx.notify();
     }
 

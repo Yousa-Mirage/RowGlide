@@ -110,8 +110,9 @@ pub(super) fn append(
 
 /// Add result-cache context to application-generated budget and protocol messages.
 /// Filesystem failures use `QueryError::CacheIo` to retain their original cause.
-pub(super) fn error(value: impl std::fmt::Display) -> QueryError {
-    QueryError::Backend(format!("Result cache: {value}"))
+/// Accept text only so typed external errors cannot accidentally lose their source here.
+pub(super) fn error(message: impl Into<String>) -> QueryError {
+    QueryError::Backend(format!("Result cache: {}", message.into()))
 }
 
 #[cfg(test)]
