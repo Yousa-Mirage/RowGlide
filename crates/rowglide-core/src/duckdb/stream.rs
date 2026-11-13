@@ -233,7 +233,7 @@ fn produce(
     sender: &SyncSender<Message>,
 ) -> Result<(), QueryError> {
     let _guard = engine::lock_engine(&gate, &cancel)?;
-    let temp = tempfile::tempdir()?;
+    let temp = crate::temporary::Directory::create()?;
     let conn = engine::connection(temp.path())?;
     let _interrupt = Interrupt::new(&conn, cancel.clone())?;
     engine::register(&conn, &file.path, file.info.format)?;

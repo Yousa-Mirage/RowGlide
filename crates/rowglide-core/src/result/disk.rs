@@ -1,47 +1,39 @@
 //! Append-only Arrow IPC segments with exact disk accounting and asynchronous deletion.
 
-use crate::QueryError;
+use crate::{QueryError, temporary::Directory};
 use arrow_array::RecordBatch;
 use arrow_ipc::{reader::StreamReader, writer::StreamWriter};
 use std::{
     fs::File,
     io::{self, BufReader, Read, Seek, SeekFrom, Write},
     sync::Arc,
-    thread,
 };
-use tempfile::TempPath;
 
 /// Shared temporary file lifetime; the last owner schedules deletion off the GUI thread.
 pub(super) struct Disk {
-    /// Owned path removed only after writer and readers have released their references.
-    path: Option<TempPath>,
+    /// Leased directory removed only after writer and readers release their references.
+    directory: Directory,
 }
 
 impl Disk {
     /// Expose the private temporary path only to cleanup tests.
     #[cfg(test)]
     pub(super) fn path(&self) -> std::path::PathBuf {
-        self.path
-            .as_ref()
-            .map(|path| path.to_path_buf())
-            .unwrap_or_default()
+        self.directory.path().join("result.arrow")
     }
 
     /// Create a private temporary file and return its writer plus shared lifetime handle.
     pub(super) fn create() -> Result<(Arc<Self>, File), QueryError> {
-        let (file, path) = tempfile::NamedTempFile::new()
-            .map_err(QueryError::CacheIo)?
-            .into_parts();
-        Ok((Arc::new(Self { path: Some(path) }), file))
+        let directory = Directory::create()?;
+        let file =
+            File::create_new(directory.path().join("result.arrow")).map_err(QueryError::CacheIo)?;
+        Ok((Arc::new(Self { directory }), file))
     }
 
     /// Read exactly one committed IPC segment, preserving nested types and nulls.
     /// Runs only on the reader worker; offsets are published after writer flush.
     pub(super) fn read(&self, offset: u64, length: u64) -> Result<RecordBatch, QueryError> {
-        let path = self
-            .path
-            .as_ref()
-            .ok_or_else(|| error("Result cache was released"))?;
+        let path = self.directory.path().join("result.arrow");
         let mut file = File::open(path).map_err(QueryError::CacheIo)?;
         file.seek(SeekFrom::Start(offset))
             .map_err(QueryError::CacheIo)?;
@@ -50,17 +42,6 @@ impl Disk {
             .next()
             .transpose()?
             .ok_or_else(|| error("Result cache segment contains no batch"))
-    }
-}
-
-impl Drop for Disk {
-    /// Move temporary-path cleanup to a short-lived worker instead of blocking rendering.
-    fn drop(&mut self) {
-        if let Some(path) = self.path.take() {
-            let _ = thread::Builder::new()
-                .name("result-cleanup".into())
-                .spawn(move || drop(path));
-        }
     }
 }
 

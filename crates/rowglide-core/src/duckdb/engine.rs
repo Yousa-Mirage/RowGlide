@@ -151,7 +151,7 @@ impl Backend for DuckDbBackend {
             return Ok(file.info.clone());
         }
         let _guard = lock_engine(&self.gate, &cancel)?;
-        let temp = tempfile::tempdir()?;
+        let temp = crate::temporary::Directory::create()?;
         let conn = connection(temp.path())?;
         let _interrupt = stream::Interrupt::new(&conn, cancel.clone())?;
         register(&conn, &path, format)?;

@@ -1,0 +1,193 @@
+//! Private temporary query directories with cross-process leases and crash recovery.
+//!
+//! A root lock serializes creation and removal. Each live directory holds its own
+//! exclusive lease until its final owner releases it. Recovery never relies on PID
+//! reuse or file age, and never follows directory or lease-file symbolic links.
+
+use crate::QueryError;
+
+#[cfg(test)]
+mod tests;
+use std::{
+    fs::{self, File, OpenOptions, TryLockError},
+    io,
+    path::{Path, PathBuf},
+    thread,
+};
+
+/// Owned scratch directory for one result file or one DuckDB execution.
+/// Drop schedules removal off the caller's thread. Workers must retain this owner
+/// until all files/connections using the directory are closed.
+pub(crate) struct Directory {
+    /// Unique resource directory beneath the versioned application cache root.
+    path: PathBuf,
+    /// Exclusive OS lease; dropping it after a crash makes the directory reclaimable.
+    lease: Option<File>,
+}
+
+impl Directory {
+    /// Create a leased directory on a background worker using the configured cache root.
+    pub(crate) fn create() -> Result<Self, QueryError> {
+        Self::create_in(&root()?).map_err(QueryError::CacheIo)
+    }
+
+    /// Create and lock a directory atomically with respect to concurrent recovery scans.
+    fn create_in(root: &Path) -> io::Result<Self> {
+        let _guard = lock_root(root)?;
+        let temp = tempfile::Builder::new()
+            .prefix("entry-")
+            .rand_bytes(16)
+            .tempdir_in(root)?;
+        let lease = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(temp.path().join("lease"))?;
+        lease.lock()?;
+        Ok(Self {
+            path: temp.keep(),
+            lease: Some(lease),
+        })
+    }
+
+    /// Borrow the directory path while its ownership keeps recovery from deleting it.
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for Directory {
+    /// Schedule removal while retaining the lease until the cleaner holds the root lock.
+    /// If spawning or removal fails, log the error and leave a reclaimable directory
+    /// for the next startup. Thread-spawn failure performs no filesystem work here.
+    fn drop(&mut self) {
+        let Some(lease) = self.lease.take() else {
+            return;
+        };
+        let path = self.path.clone();
+        if let Err(error) = thread::Builder::new()
+            .name("cache-cleanup".into())
+            .spawn(move || {
+                if let Err(error) = remove_owned(&path, lease) {
+                    eprintln!("Cannot remove temporary cache {}: {error}", path.display());
+                }
+            })
+        {
+            eprintln!("Cannot start temporary cache cleanup: {error}");
+        }
+    }
+}
+
+/// Reclaim abandoned query storage while preserving every directory with a live lease.
+/// Call on a startup/background worker. Only Rowglide's versioned cache root is
+/// scanned; unrelated paths and symlinks are ignored. Removal failures are reported
+/// after other entries have been attempted and may be retried on a later startup.
+pub fn cleanup_temporary_storage() -> Result<(), QueryError> {
+    sweep(&root()?).map_err(QueryError::CacheIo)
+}
+
+/// Select the per-user cache root, with an explicit override for isolated tests or storage.
+/// The override denotes a dedicated Rowglide directory, not a general temporary folder.
+fn root() -> Result<PathBuf, QueryError> {
+    if let Some(path) = std::env::var_os("ROWGLIDE_CACHE_DIR") {
+        if path.is_empty() {
+            return Err(QueryError::Invalid(
+                "ROWGLIDE_CACHE_DIR cannot be empty".into(),
+            ));
+        }
+        return Ok(PathBuf::from(path).join("temporary-v1"));
+    }
+    dirs::cache_dir()
+        .map(|path| path.join("rowglide").join("temporary-v1"))
+        .ok_or_else(|| QueryError::Invalid("Cannot locate the user cache directory".into()))
+}
+
+/// Open and exclusively lock the persistent root coordinator; never remove its file.
+/// Keeping the same lock inode avoids two processes coordinating through different locks.
+fn lock_root(root: &Path) -> io::Result<File> {
+    fs::create_dir_all(root)?;
+    if !fs::symlink_metadata(root)?.file_type().is_dir() {
+        return Err(io::Error::other(
+            "Temporary cache root is not a regular directory",
+        ));
+    }
+    let path = root.join("coordinator.lock");
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if !metadata.file_type().is_file() => {
+            return Err(io::Error::other("Cache coordinator is not a regular file"));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)?;
+    lock.lock()?;
+    Ok(lock)
+}
+
+/// Recognize only names generated by this module, not arbitrary directories in the root.
+fn is_entry(name: &std::ffi::OsStr) -> bool {
+    name.to_str().is_some_and(|name| {
+        name.strip_prefix("entry-").is_some_and(|suffix| {
+            suffix.len() == 16 && suffix.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        })
+    })
+}
+
+/// Scan under the root lock; preserve active entries and retain the first cleanup error.
+fn sweep(root: &Path) -> io::Result<()> {
+    let _guard = lock_root(root)?;
+    let mut failure = None;
+    for entry in fs::read_dir(root)? {
+        let result = entry.and_then(|entry| {
+            if is_entry(&entry.file_name()) && entry.file_type()?.is_dir() {
+                remove_abandoned(&entry.path())?;
+            }
+            Ok(())
+        });
+        if let Err(error) = result {
+            failure.get_or_insert(error);
+        }
+    }
+    failure.map_or(Ok(()), Err)
+}
+
+/// Remove an unlocked entry while the root coordinator prevents new owners or cleaners.
+/// A missing lease means creation was interrupted. Other inspection/locking failures
+/// are preserved as errors rather than interpreted as permission to delete.
+fn remove_abandoned(path: &Path) -> io::Result<()> {
+    let lease_path = path.join("lease");
+    match fs::symlink_metadata(&lease_path) {
+        Ok(metadata) if !metadata.file_type().is_file() => return Ok(()),
+        Ok(_) => {
+            let lease = OpenOptions::new().read(true).write(true).open(lease_path)?;
+            match lease.try_lock() {
+                Ok(()) => drop(lease),
+                Err(TryLockError::WouldBlock) => return Ok(()),
+                Err(TryLockError::Error(error)) => return Err(error),
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    fs::remove_dir_all(path)
+}
+
+/// Release an owned lease and remove its directory under the same coordinator as recovery.
+/// Closing the lease before removal also permits deletion on Windows.
+fn remove_owned(path: &Path, lease: File) -> io::Result<()> {
+    let root = path
+        .parent()
+        .ok_or_else(|| io::Error::other("Missing cache root"))?;
+    let _guard = lock_root(root)?;
+    drop(lease);
+    match fs::remove_dir_all(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
+}

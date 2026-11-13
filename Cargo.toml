@@ -27,6 +27,7 @@ gpui-kit = "=0.9.1"
 duckdb = { version = "=1.20000.1", features = ["bundled", "parquet"] }
 arrow-cast = "60"
 tempfile = "3"
+dirs = "6"
 sqlparser = "=0.64.0"
 arrow-array = "60"
 arrow-schema = "60"

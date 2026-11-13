@@ -10,6 +10,7 @@ async-channel.workspace = true
 thiserror.workspace = true
 duckdb.workspace = true
 tempfile.workspace = true
+dirs.workspace = true
 sqlparser.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true

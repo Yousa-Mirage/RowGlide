@@ -49,6 +49,19 @@ Transport, decoding, inspector references and engine allocations are additional 
 the cache budget. Releasing a result cancels its workers and removes its temporary
 file after they exit.
 
+SQL result files and DuckDB spill directories live under the per-user cache
+directory, in `rowglide/temporary-v1`. Each resource holds an OS file lock for its
+entire lifetime. Startup recovery runs in the background and removes abandoned
+resources only after acquiring their locks; other running instances remain safe.
+A root lock coordinates creation and cleanup, including interrupted creation.
+Released resources are deleted in the background. Failed deletion is logged and
+can be retried at the next startup; an abrupt exit can leave files until then.
+
+Set `ROWGLIDE_CACHE_DIR` to choose a different cache location; Rowglide creates
+its `temporary-v1` subdirectory there. This is a dedicated scratch location, not
+a place to store source files. Recovery ignores unrelated names and symbolic links.
+Old unmarked files in the system temporary directory are not automatically deleted.
+
 Each query uses a temporary in-memory connection, at most four execution threads,
 a 512 MB DuckDB memory limit, and a private temporary spill directory capped at
 2 GB. These engine limits are not process-wide memory guarantees. A shared gate
@@ -89,6 +102,7 @@ on app or GUI crates. App injects a concrete backend through
 - `pagination.rs`: validated Browse ranges and bounded page collection.
 - `session.rs`: cancellable, capacity-one query events and background cursor cleanup.
 - `result/`: continuous Arrow IPC storage, bounded memory cache and asynchronous rereads.
+- `temporary.rs`: leased scratch directories, background deletion and crash recovery.
 - `duckdb/`: private file registry, SQL construction and Arrow worker transport.
 - `mock.rs`: deterministic fixture backend and its behavior tests.
 

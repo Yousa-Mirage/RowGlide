@@ -9,6 +9,9 @@ mod duckdb;
 mod mock;
 mod model;
 mod pagination;
+mod temporary;
+
+pub use temporary::cleanup_temporary_storage;
 
 pub use backend::{Backend, BatchCursor, Cancellation, QueryError};
 pub use duckdb::DuckDbBackend;
