@@ -44,6 +44,8 @@ pub(crate) fn connection(temp: &Path) -> Result<Connection, QueryError> {
         .with("temp_directory", temp.to_string_lossy())
         .map_err(error)?
         .with("max_temp_directory_size", "2GB")
+        .map_err(error)?
+        .with("preserve_insertion_order", "true")
         .map_err(error)?;
     Connection::open_in_memory_with_flags(config).map_err(error)
 }

@@ -1,5 +1,9 @@
 //! Engine-independent contracts. Blocking backend operations run on a worker.
 
+mod pagination;
+
+pub use pagination::{BrowsePage, PageResult};
+
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use std::path::Path;

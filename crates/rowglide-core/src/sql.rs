@@ -52,14 +52,20 @@ pub(crate) fn build(query: &Query, schema: &Schema) -> Result<(String, Vec<Value
             .get(sort.column)
             .ok_or_else(|| QueryError::Invalid("Sort column is no longer available".into()))?;
         sql.push_str(&format!(
-            " ORDER BY {} {} NULLS LAST",
+            " ORDER BY {} {} NULLS LAST, row_number() OVER ()",
             identifier(field.name()),
             if sort.descending { "DESC" } else { "ASC" }
         ));
+        // Preserve source order among equal values across independent pages.
     }
-    // Push the preview limit into DuckDB, after filtering and global sorting.
-    sql.push_str(" LIMIT ? OFFSET ?");
-    params.push(Value::BigInt(query.limit.unwrap_or(8193).min(8193) as i64));
+    // Honor the requested range after filtering and global sorting.
+    if let Some(limit) = query.limit {
+        sql.push_str(" LIMIT ?");
+        params.push(Value::BigInt(
+            i64::try_from(limit).map_err(|_| QueryError::Invalid("Limit is too large".into()))?,
+        ));
+    }
+    sql.push_str(" OFFSET ?");
     params
         .push(Value::BigInt(i64::try_from(query.offset).map_err(
             |_| QueryError::Invalid("Offset is too large".into()),

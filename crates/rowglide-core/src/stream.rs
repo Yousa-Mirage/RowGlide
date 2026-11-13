@@ -191,7 +191,7 @@ fn produce(
         // Avoid retaining a single pathological batch beyond the preview budget.
         if batch.get_array_memory_size() > 16 * 1024 * 1024 {
             return Err(engine::error(
-                "A result batch exceeds the 16 MiB preview budget; select fewer columns or smaller values",
+                "A result batch exceeds the 16 MiB memory budget; reduce Limit or select smaller values",
             ));
         }
         if sender.send(Message::Batch(batch)).is_err() {
