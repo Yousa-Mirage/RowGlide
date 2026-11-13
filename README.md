@@ -5,7 +5,7 @@ A native data browser built with Rust and [GPUI Kit](https://github.com/longbrid
 ## Run
 
 ```sh
-cargo run -p rowglide-ui --bin rowglide
+cargo run -p rowglide-app --bin rowglide
 ```
 
 macOS development bundle (requires Rust and Xcode command-line tools):
@@ -136,7 +136,7 @@ Rust 1.99 or newer is the current supported development baseline. Project metada
 inherits build settings and strict workspace lints. Project code forbids
 unsafe code, unnecessary qualifications and unreachable public items.
 
-Build an optimized executable with `cargo build --release -p rowglide-ui`. The
+Build an optimized executable with `cargo build --release -p rowglide-app`. The
 release profile uses optimization level 3, Thin LTO, one codegen unit and strips
 debug information. Panic unwinding is retained.
 

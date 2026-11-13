@@ -2,7 +2,7 @@
 # Build a local development bundle; no installation or signing is performed.
 set -eu
 cd "$(dirname "$0")/.."
-cargo build -p rowglide-ui --bin rowglide
+cargo build -p rowglide-app --bin rowglide
 bundle="target/Rowglide.app"
 mkdir -p "$bundle/Contents/MacOS"
 cp target/debug/rowglide "$bundle/Contents/MacOS/rowglide"

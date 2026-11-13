@@ -4,7 +4,7 @@ default:
 
 # Run the native application with DuckDB.
 dev:
-    cargo run -p rowglide-ui --bin rowglide
+    cargo run -p rowglide-app --bin rowglide
 
 # Run workspace tests, including documentation tests.
 test:
