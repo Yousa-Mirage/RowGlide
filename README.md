@@ -87,6 +87,16 @@ Table rendering and cell helpers remain independent of workspace coordination.
 
 ## Checks
 
+Generate API and internal implementation documentation with:
+
+```sh
+cargo doc --workspace --no-deps --document-private-items
+```
+
+The generated crate pages describe shared contracts, backend worker lifetimes,
+Browse page boundaries and per-tab UI state. Rust types and named functions,
+including private helpers, carry English documentation alongside their code.
+
 ```sh
 cargo fmt --all -- --check
 cargo check --workspace

@@ -3,6 +3,9 @@ use duckdb::Connection;
 use rowglide_app::{Backend, BrowsePage, Cancellation, Preview, Query, Sort};
 use rowglide_core::DuckDbBackend;
 
+/// Read the retained first-column Int64 IDs in display order for page assertions.
+///
+/// Returns an error if a fixture unexpectedly has a different first-column type.
 fn ids(preview: &Preview) -> Result<Vec<i64>, Box<dyn std::error::Error>> {
     let mut ids = Vec::new();
     for batch in &preview.batches {
@@ -16,6 +19,10 @@ fn ids(preview: &Preview) -> Result<Vec<i64>, Box<dyn std::error::Error>> {
     Ok(ids)
 }
 
+/// Exercise Browse pagination against generated CSV and Parquet files.
+///
+/// Checks limits above 8,192, exact/empty final pages, filtered sort ties without
+/// missing/duplicate IDs, backend requests without limits, and range overflow.
 #[test]
 fn real_files_have_complete_pages_and_stable_sorted_boundaries()
 -> Result<(), Box<dyn std::error::Error>> {

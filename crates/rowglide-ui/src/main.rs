@@ -8,6 +8,11 @@ use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 use std::sync::Arc;
 
+/// Start GPUI Kit, install assets and the light theme, and open the main window.
+///
+/// Constructs the concrete DuckDB backend only at the composition boundary, then
+/// injects it into Workspace through the application interface. Window creation
+/// errors are written to stderr; closing the last window quits the application.
 fn main() {
     application().with_assets(assets::Assets).run(|cx| {
         init(cx);

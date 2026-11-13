@@ -9,6 +9,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Verify real CSV registration, duplicate paths, bound filters and global sorting.
+///
+/// Also checks aggregate SQL, rejection of write/multiple statements and a filter
+/// containing SQL-like text that must remain a literal value.
 #[test]
 fn csv_filters_sorting_sql_and_quoted_paths() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
@@ -93,6 +97,10 @@ fn csv_filters_sorting_sql_and_quoted_paths() -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
+/// Check typed nested Parquet data and global ordering through the legacy preview.
+///
+/// Asserts the retained row ceiling and truncation flag; printed elapsed time is
+/// an informal debug observation rather than a performance acceptance threshold.
 #[test]
 fn parquet_nested_preview_is_bounded_and_globally_sorted() -> Result<(), Box<dyn std::error::Error>>
 {
@@ -139,6 +147,10 @@ fn parquet_nested_preview_is_bounded_and_globally_sorted() -> Result<(), Box<dyn
     Ok(())
 }
 
+/// Cancel an expensive DuckDB query and verify prompt shutdown plus subsequent recovery.
+///
+/// A successful query afterward proves that worker cleanup released the shared
+/// engine gate instead of leaving later requests blocked.
 #[test]
 fn cancellation_interrupts_engine_and_releases_worker() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
@@ -175,6 +187,10 @@ fn cancellation_interrupts_engine_and_releases_worker() -> Result<(), Box<dyn st
     Ok(())
 }
 
+/// Exercise missing/corrupt files, quoted column sorting and empty-result schemas.
+///
+/// Also verifies null placement after an explicit offset and schema retention for
+/// an empty SQL result.
 #[test]
 fn corrupt_files_empty_results_and_quoted_columns() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;

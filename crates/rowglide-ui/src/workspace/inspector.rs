@@ -10,7 +10,11 @@ use gpui_kit::component::{
 use gpui_kit::*;
 
 impl Workspace {
-    // Side panel for the selected cell and its nested values.
+    /// Build the fixed-width panel for one selected Arrow cell and its nested children.
+    ///
+    /// `name` labels the source column; `row` indexes the supplied shared array. The
+    /// array reference keeps data alive while the panel is visible. A close action
+    /// clears the selected cell; nested expansion state is managed by `Self::tree`.
     pub(super) fn render_inspector(
         &self,
         name: String,
@@ -72,7 +76,12 @@ impl Workspace {
             )
     }
 
-    // Render an expandable cell tree with a fixed nesting depth limit.
+    /// Render one expandable inspector node and its currently expanded descendants.
+    ///
+    /// `path` identifies expansion state, `depth` controls indentation and recursion
+    /// stops below depth 12. Children retain typed Arrow references and list/map child
+    /// counts are capped by `cells::children`. This is a bounded recursive tree, not a
+    /// virtualized or complete export of arbitrarily large nested values.
     fn tree(
         &self,
         label: String,

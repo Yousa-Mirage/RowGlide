@@ -6,6 +6,7 @@ use gpui_kit::*;
 use rowglide_app::Cancellation;
 
 impl Workspace {
+    /// Build the shared Open files button and wire it to native path selection.
     pub(super) fn render_open_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
         Button::new("open-files")
             .small()
@@ -13,6 +14,12 @@ impl Workspace {
             .on_click(cx.listener(|this, _, window, cx| this.open_files(window, cx)))
     }
 
+    /// Choose local files, inspect them in background work and activate the last opened tab.
+    ///
+    /// A new invocation cancels the previous inspection token. Successful duplicate
+    /// sources reuse their tabs; failures are collected into the status message.
+    /// Cancelling the picker leaves the workspace unchanged. Tab switches save the
+    /// current session and cancel its query through the normal session lifecycle.
     fn open_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.opening_cancel.cancel();
         self.opening_cancel = Cancellation::default();

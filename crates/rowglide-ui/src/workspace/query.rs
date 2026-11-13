@@ -7,6 +7,10 @@ use rowglide_app::{BrowsePage, Cancellation, Preview};
 use std::time::Instant;
 
 impl Workspace {
+    /// Capture the generation, active tab index and mode for the current request.
+    ///
+    /// Completion handlers compare this snapshot with the live key before updating the
+    /// GUI, preventing older requests from replacing another session's result.
     fn request_key(&self) -> RequestKey {
         RequestKey {
             generation: self.generation,
@@ -15,6 +19,10 @@ impl Workspace {
         }
     }
 
+    /// Read the current Browse controls as owned strings without validating or applying them.
+    ///
+    /// Preserves unfinished/invalid text so session switches can restore exactly what
+    /// the user was editing.
     pub(super) fn browse_draft(&self, cx: &App) -> BrowseDraft {
         BrowseDraft {
             search: self.search.read(cx).value().to_string(),
@@ -23,7 +31,11 @@ impl Workspace {
         }
     }
 
-    // Validate browse controls before replacing the active query.
+    /// Validate and apply Browse drafts, normalize range inputs and start a new query.
+    ///
+    /// Preserves the existing sort and honors the explicit offset. Invalid drafts only
+    /// update the error/status display; they do not replace the applied query or result.
+    /// Calls made in SQL mode are ignored.
     pub(super) fn apply_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.active_tab().mode != TabMode::Browse {
             return;
@@ -52,12 +64,20 @@ impl Workspace {
         }
     }
 
+    /// Check whether Previous or Next is available for the currently displayed session.
+    ///
+    /// `next` selects the direction. The tab checks busy state, unapplied controls and
+    /// completed-page metadata; this wrapper supplies live GUI input text.
     pub(super) fn can_turn_page(&self, next: bool, cx: &App) -> bool {
         self.active_tab()
             .can_turn_page(next, self.busy, &self.browse_draft(cx))
     }
 
-    // Navigate the applied query; edited controls require Apply first.
+    /// Navigate one page of the applied Browse query when its controls allow it.
+    ///
+    /// Updates the query, saved offset draft and visible Offset input before reloading.
+    /// An unavailable navigation is ignored; range overflow becomes a visible error.
+    /// The current result is replaced, not appended to.
     pub(super) fn turn_page(&mut self, next: bool, window: &mut Window, cx: &mut Context<Self>) {
         if !self.can_turn_page(next, cx) {
             return;
@@ -87,6 +107,10 @@ impl Workspace {
         }
     }
 
+    /// Restore empty filter text, the default page size and offset zero in the controls.
+    ///
+    /// This updates GUI text only. The Reset handler separately resets the applied
+    /// query and saved drafts before starting the corresponding request.
     pub(super) fn reset_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search
             .update(cx, |state, cx| state.set_value("", window, cx));
@@ -97,7 +121,13 @@ impl Workspace {
             .update(cx, |state, cx| state.set_value("0", window, cx));
     }
 
-    // Replace the active task; complete browse pages are collected off the UI thread.
+    /// Replace the active request and collect its result away from the GUI thread.
+    ///
+    /// Cancels the preceding token, advances request identity, clears selection/page
+    /// metadata and enters loading state. Browse collects a complete bounded page;
+    /// SQL uses the legacy preview collector. Completion updates the table and status
+    /// only if tab, mode and generation still match, resets scrolling for nonempty
+    /// results, and reports errors without publishing partial Browse pages.
     pub(super) fn run(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.cancellation.cancel();
         self.cancellation = Cancellation::default();
@@ -207,6 +237,11 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Signal query cancellation, release the UI task handle and invalidate late results.
+    ///
+    /// Clears the busy/loading flags and displays cancellation status. A running query
+    /// has already cleared its old result/page metadata. This does not join DuckDB on
+    /// the GUI thread; background cursor cleanup releases engine resources.
     pub(super) fn cancel(&mut self, cx: &mut Context<Self>) {
         self.cancellation.cancel();
         self.task = None;
@@ -222,7 +257,11 @@ impl Workspace {
         cx.notify();
     }
 
-    // Save drafts separately from applied queries, including invalid input.
+    /// Save live inputs and move the active result/inspector into the current tab mode.
+    ///
+    /// Cancels pending work first, preserves invalid drafts independently of applied
+    /// queries, records the cache recency stamp and trims inactive results. Arrow
+    /// buffers move out of the shared table rather than being copied.
     pub(super) fn save_session(&mut self, cx: &mut Context<Self>) {
         if self.busy {
             self.cancel(cx);
@@ -250,6 +289,12 @@ impl Workspace {
         super::state::trim_cache(&mut self.tabs);
     }
 
+    /// Restore the selected tab/mode's applied query, drafts, result and inspector.
+    ///
+    /// Moves retained data back into the shared table and updates sorting availability.
+    /// Only a never-initialized Browse session starts automatically; SQL and evicted
+    /// results require explicit execution. Callers save/cancel the previous session
+    /// before changing the active tab or mode.
     pub(super) fn restore_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.generation += 1;
         self.query = self.active_tab().active_query();
@@ -282,6 +327,10 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Save the current session and restore another valid file tab.
+    ///
+    /// Out-of-range indices and clicks on the already active tab are ignored. Saving
+    /// cancels pending work so its completion cannot overwrite the restored tab.
     pub(super) fn switch_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index >= self.tabs.len() || index == self.active_tab {
             return;
@@ -291,6 +340,10 @@ impl Workspace {
         self.restore_session(window, cx);
     }
 
+    /// Save the active mode, toggle Browse/SQL and restore the other mode's session.
+    ///
+    /// Browse and SQL retain separate results and applied queries; entering SQL restores
+    /// its draft without executing it.
     pub(super) fn switch_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.save_session(cx);
         let tab = self.active_tab_mut();
@@ -301,6 +354,10 @@ impl Workspace {
         self.restore_session(window, cx);
     }
 
+    /// Snapshot the SQL editor text as the last executed statement and start a request.
+    ///
+    /// Only operates in SQL mode. The query is rebuilt from the tab's SQL state so
+    /// Browse filtering, sorting and range settings are excluded.
     pub(super) fn run_sql(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.active_tab().mode != TabMode::Sql {
             return;

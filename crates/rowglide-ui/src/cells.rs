@@ -5,7 +5,13 @@ use arrow_array::{
     LargeStringArray, ListArray, MapArray, StringArray, StringViewArray, StructArray,
 };
 
-/// Format a compact cell preview, truncating strings to 240 characters.
+/// Format one cell for the grid and inspector without changing its Arrow value.
+///
+/// `row` is an index within `array`; out-of-range rows yield an empty string and
+/// nulls yield `null`. Text/fallback strings are limited to 240 Unicode characters,
+/// Float64 values use two decimal places, and nested values show counts. Unsupported
+/// scalar types use Arrow formatting, falling back to the type name on failure.
+/// This is a display summary, not a lossless value export.
 pub(crate) fn summary(array: &ArrayRef, row: usize) -> String {
     if row >= array.len() {
         return String::new();
@@ -59,7 +65,13 @@ pub(crate) fn summary(array: &ArrayRef, row: usize) -> String {
         .unwrap_or_else(|_| format!("{:?}", array.data_type()))
 }
 
-/// Expose struct fields or up to 200 list items for the inspector.
+/// Expose the immediate typed children of one nested cell for the inspector.
+///
+/// Each tuple contains a display label, an owned shared array reference and a row
+/// index into that array. Struct fields preserve the parent row index; list/map
+/// children use indices in the selected value slice. Lists and map entries are
+/// limited to 200 children. Null, invalid or unsupported scalar cells have none.
+/// Map entries remain key/value structs; dictionary encoding is not treated as a map.
 pub(crate) fn children(array: &ArrayRef, row: usize) -> Vec<(String, ArrayRef, usize)> {
     if row >= array.len() || array.is_null(row) {
         return vec![];
@@ -100,6 +112,10 @@ pub(crate) fn children(array: &ArrayRef, row: usize) -> Vec<(String, ArrayRef, u
     vec![]
 }
 
+/// Map an Arrow data type to a short, user-facing column/inspector label.
+///
+/// Related numeric and text representations share labels. Unlisted types use
+/// `Value`; the original Arrow schema still retains all type details.
 pub(crate) fn type_label(data_type: &arrow_schema::DataType) -> &'static str {
     use arrow_schema::DataType;
 

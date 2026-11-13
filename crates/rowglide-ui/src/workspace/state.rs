@@ -4,29 +4,48 @@ use arrow_array::ArrayRef;
 use rowglide_app::{BrowsePage, Preview, Query, QueryError, Source};
 use std::collections::HashSet;
 
-/// The result mode controls which query state and result are active for a tab.
+/// Select which independent query and result session a file tab exposes.
+///
+/// Browse uses source filtering/sorting and explicit pages; SQL uses the editor's
+/// last executed statement and its own result schema.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TabMode {
+    /// Structured source filtering, sorting and explicit page navigation.
     Browse,
+    /// User-authored query draft, last execution and independent result schema.
     Sql,
 }
 
-/// Identifies the only request allowed to update the active view.
+/// Identity of the only background request allowed to update the active view.
+///
+/// Generation changes invalidate replaced/cancelled requests. Tab index and mode
+/// prevent cross-session writes; indices remain valid identifiers only while tabs
+/// are not removed or reordered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct RequestKey {
+    /// Monotonic workspace request revision, also advanced on cancellation/restoration.
     pub(super) generation: u64,
+    /// Active tab index at submission; valid while tabs are not removed or reordered.
     pub(super) tab: usize,
+    /// Browse or SQL session that submitted this request.
     pub(super) mode: TabMode,
 }
 
-/// Editable text is independent of the last successfully applied browse query.
+/// Editable Browse text kept independently from the last applied query.
+///
+/// Values may be incomplete or invalid. Parsing occurs on Apply/navigation checks;
+/// switching tabs preserves the original strings rather than silently correcting them.
 pub(super) struct BrowseDraft {
+    /// Unapplied filter text, preserved exactly while editing.
     pub(super) search: String,
+    /// Editable page-size text, including blanks or invalid drafts.
     pub(super) limit: String,
+    /// Editable zero-based start text, including blanks or invalid drafts.
     pub(super) offset: String,
 }
 
 impl Default for BrowseDraft {
+    /// Initialize empty search text, the default 1,000-row page size and offset zero.
     fn default() -> Self {
         Self {
             search: String::new(),
@@ -37,6 +56,11 @@ impl Default for BrowseDraft {
 }
 
 impl BrowseDraft {
+    /// Parse range drafts into a validated positive-limit Browse page.
+    ///
+    /// Whitespace is ignored; blank Limit/Offset resolve to 1,000/0. Returns errors for
+    /// invalid integers, zero page sizes or ranges exceeding the lookahead-safe bound.
+    /// The original draft strings are not modified.
     pub(super) fn page(&self) -> Result<BrowsePage, QueryError> {
         let parse = |text: &str, default: usize| {
             if text.trim().is_empty() {
@@ -53,6 +77,10 @@ impl BrowseDraft {
         )
     }
 
+    /// Check whether the current text describes the applied Browse query.
+    ///
+    /// Search text must match exactly; range text is compared by parsed numeric value.
+    /// Invalid ranges or pending changes return false and disable page navigation.
     pub(super) fn matches_query(&self, query: &Query) -> bool {
         self.search == query.search
             && self.page().is_ok_and(|page| {
@@ -61,15 +89,26 @@ impl BrowseDraft {
     }
 }
 
-/// Navigation describes the completed page, never pending input or SQL results.
+/// Completed Browse page metadata kept separately from the active table buffers.
+///
+/// Stores the requested range, actual displayed row count and one-row lookahead
+/// result. It belongs to one tab's Browse result and is cleared on replacement or
+/// eviction so navigation cannot reuse stale next-page information.
 #[derive(Clone, Copy)]
 pub(super) struct PageSummary {
+    /// Validated page requested by the completed Browse operation.
     pub(super) range: BrowsePage,
+    /// Actual retained rows, at most the requested page size.
     pub(super) rows: usize,
+    /// Whether lookahead fetched a row beyond the displayed page.
     pub(super) has_next: bool,
 }
 
 impl PageSummary {
+    /// Format a one-based displayed row range without claiming a total result count.
+    ///
+    /// Empty pages report zero rows and their requested offset. Nonempty pages show
+    /// End of results only when lookahead found no further row.
     pub(super) fn label(self) -> String {
         if self.rows == 0 {
             format!("0 rows · Offset {}", self.range.offset())
@@ -89,22 +128,35 @@ impl PageSummary {
     }
 }
 
-/// Persistent state for one open file tab.
+/// Persistent queries, drafts and result snapshots for one registered file.
 ///
-/// Input state is retained when switching tabs. Results are intentionally
-/// bounded; evicted results require an explicit rerun.
+/// Browse and SQL own separate applied state. Inactive results live here; the
+/// active result's Arrow buffers move into the shared table. Page metadata remains
+/// with the tab. Drafts survive cancellation, mode switches and cache eviction.
 pub(super) struct TabState {
+    /// Registered file metadata shared by both modes.
     pub(super) source: Source,
+    /// Last applied Browse query, independent of pending input text.
     pub(super) browse: Query,
+    /// Saved SQL editor draft; execution uses last_sql instead.
     pub(super) sql: String,
+    /// Session currently exposed when this file tab is active.
     pub(super) mode: TabMode,
+    /// Saved Browse control strings, including unapplied changes.
     pub(super) drafts: BrowseDraft,
+    /// Most recently submitted SQL text, or None before the first execution.
     pub(super) last_sql: Option<String>,
+    /// Browse-only page metadata, retained buffers and inspector state.
     pub(super) browse_result: ResultState,
+    /// SQL-only result buffers and inspector state.
     pub(super) sql_result: ResultState,
 }
 
 impl TabState {
+    /// Create an uninitialized Browse tab for a registered source.
+    ///
+    /// Starts at the default first page and seeds the SQL editor with a 100-row example.
+    /// Neither Browse nor SQL executes until the workspace activates/runs the session.
     pub(super) fn new(source: Source) -> Self {
         Self {
             browse: Query {
@@ -122,6 +174,7 @@ impl TabState {
         }
     }
 
+    /// Borrow the saved result state corresponding to this tab's active mode.
     pub(super) fn result_mut(&mut self) -> &mut ResultState {
         match self.mode {
             TabMode::Browse => &mut self.browse_result,
@@ -129,6 +182,11 @@ impl TabState {
         }
     }
 
+    /// Determine whether `next` (Next) or its opposite (Previous) is currently usable.
+    ///
+    /// Requires Browse mode, no in-flight query and drafts matching the applied query.
+    /// Next needs completed lookahead evidence; Previous only needs a positive applied
+    /// offset, allowing recovery from empty or failed pages.
     pub(super) fn can_turn_page(&self, next: bool, busy: bool, draft: &BrowseDraft) -> bool {
         if self.mode != TabMode::Browse || busy || !draft.matches_query(&self.browse) {
             return false;
@@ -140,6 +198,10 @@ impl TabState {
         }
     }
 
+    /// Clone the applied Browse query or rebuild a query from the last executed SQL.
+    ///
+    /// SQL drafts are excluded until Run is pressed. Before any SQL execution, the SQL
+    /// field is `None`; callers must not automatically run that placeholder session.
     pub(super) fn active_query(&self) -> Query {
         match self.mode {
             TabMode::Browse => self.browse.clone(),
@@ -152,19 +214,32 @@ impl TabState {
     }
 }
 
-/// A mode's cached result and inspector state; inputs survive eviction.
+/// One mode's retained result, inspector state, status and cache bookkeeping.
+///
+/// `preview` is temporarily absent while its buffers are in the active table, after
+/// eviction, or before completion. `initialized` distinguishes a never-run session
+/// from one requiring explicit reload. Page metadata is meaningful only for Browse.
 pub(super) struct ResultState {
+    /// Inactive result buffers; moved into the shared table while active.
     pub(super) preview: Option<Preview>,
+    /// Completed Browse navigation metadata; absent for SQL and invalidated pages.
     pub(super) page: Option<PageSummary>,
+    /// Saved user-facing status text restored with this session.
     pub(super) status: String,
+    /// Whether the saved status is displayed as an error.
     pub(super) error: bool,
+    /// Inspector column label, shared Arrow array and row within that array.
     pub(super) selected: Option<(String, ArrayRef, usize)>,
+    /// Inspector node paths currently expanded in this session.
     pub(super) expanded: HashSet<String>,
+    /// Workspace generation at last save, used to choose cached-result eviction.
     pub(super) touched: u64,
+    /// Whether a request has been started; prevents automatic reload after eviction.
     pub(super) initialized: bool,
 }
 
 impl Default for ResultState {
+    /// Initialize an unqueried result session with Ready status and no retained data.
     fn default() -> Self {
         Self {
             preview: None,
@@ -179,7 +254,12 @@ impl Default for ResultState {
     }
 }
 
-// At most three inactive previews plus the active preview (16 MiB each).
+/// Evict the least recently touched stored results until at most three remain.
+///
+/// The active result normally lives in the table and is not counted here. Eviction
+/// releases preview and inspector array references plus page metadata, while keeping
+/// drafts and applied queries for explicit reload. This bounds retained entries,
+/// not all engine/transient allocations in the process.
 pub(super) fn trim_cache(tabs: &mut [TabState]) {
     loop {
         let mut entries = tabs
@@ -222,6 +302,7 @@ mod tests {
     use rowglide_app::Sort;
     use std::sync::Arc;
 
+    /// Construct a minimal one-row source tab for pure state tests without GPUI setup.
     fn tab(id: usize) -> TabState {
         TabState::new(Source {
             id,
@@ -232,6 +313,7 @@ mod tests {
         })
     }
 
+    /// Verify that changing any request identity component makes a result stale.
     #[test]
     fn request_identity_rejects_other_tabs_modes_and_generations() {
         let current = RequestKey {
@@ -256,6 +338,7 @@ mod tests {
         );
     }
 
+    /// Check default/blank range parsing, invalid values and detection of unapplied edits.
     #[test]
     fn drafts_validate_page_sizes_and_require_apply() -> Result<(), QueryError> {
         let mut draft = BrowseDraft::default();
@@ -278,6 +361,9 @@ mod tests {
         Ok(())
     }
 
+    /// Exercise navigation eligibility through loading, pending edits, EOF and SQL switches.
+    ///
+    /// Also checks the displayed final-page range and isolation from a newly opened tab.
     #[test]
     fn navigation_obeys_completed_pages_pending_edits_and_mode() -> Result<(), QueryError> {
         let mut first = tab(0);
@@ -316,6 +402,10 @@ mod tests {
         Ok(())
     }
 
+    /// Verify that SQL excludes Browse parameters while each mode keeps its own drafts.
+    ///
+    /// Switching back restores the applied Browse query, including sort and range,
+    /// without applying invalid text or altering another file's session.
     #[test]
     fn modes_keep_applied_queries_and_drafts_separate() {
         let mut first = tab(4);
@@ -347,6 +437,10 @@ mod tests {
         assert_eq!(other.mode, TabMode::Browse);
     }
 
+    /// Verify that cache eviction releases both table and inspector Arrow references.
+    ///
+    /// Weak references detect retained-buffer leaks; assertions also ensure page
+    /// metadata is cleared and editable SQL drafts survive eviction.
     #[test]
     fn eviction_releases_inspector_arrays_but_keeps_inputs()
     -> Result<(), Box<dyn std::error::Error>> {

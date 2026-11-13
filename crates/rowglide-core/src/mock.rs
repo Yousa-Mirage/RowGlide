@@ -8,7 +8,9 @@ use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use rowglide_app::{Backend, BatchCursor, Cancellation, Query, QueryError, Source};
 use std::sync::Arc;
 
+/// Supported demo statement returning at most the first 100 selected fixture rows.
 pub const PREVIEW_SQL: &str = "SELECT * FROM current_file LIMIT 100;";
+/// Supported demo statement returning no rows while preserving the fixture schema.
 pub const EMPTY_SQL: &str = "SELECT * FROM current_file WHERE false;";
 
 const NAMES: [&str; 8] = [
@@ -23,10 +25,18 @@ const NAMES: [&str; 8] = [
 ];
 const REGIONS: [&str; 4] = ["Shanghai", "London", "Tokyo", "San Francisco"];
 
+/// Deterministic in-memory fixture backend for tests and UI development.
+///
+/// It generates a fixed set of sources, filters/sorts their row IDs and materializes
+/// Arrow values in small batches. SQL support is limited to two named presets;
+/// there is no SQL parser or query engine in this backend.
 #[derive(Default)]
 pub struct MockBackend;
 
 impl Backend for MockBackend {
+    /// Describe the nested 50,000-row fixture, scalar 2,400-row fixture and empty fixture.
+    ///
+    /// These counts are known from fixture construction and require no file access.
     fn sources(&self) -> Vec<Source> {
         vec![
             Source {
@@ -53,6 +63,12 @@ impl Backend for MockBackend {
         ]
     }
 
+    /// Select fixture row IDs, filter and sort them, then apply the requested range.
+    ///
+    /// Browse ranges are applied after global filtering/sorting; SQL recognizes only
+    /// the predefined 100-row and empty-result statements. The returned cursor holds
+    /// selected IDs and creates Arrow batches lazily. Returns errors for cancellation,
+    /// unknown sources, unsupported sort columns or unsupported SQL presets.
     fn query(
         &self,
         query: Query,
@@ -144,22 +160,33 @@ impl Backend for MockBackend {
     }
 }
 
+/// Choose a repeatable display name from the zero-based fixture row ID.
 fn name(id: usize) -> &'static str {
     NAMES[id % NAMES.len()]
 }
 
+/// Choose a repeatable region, advancing to the next region every three IDs.
 fn region(id: usize) -> &'static str {
     REGIONS[(id / 3) % REGIONS.len()]
 }
 
+/// Generate a deterministic decimal amount, leaving every seventeenth ID null.
+///
+/// The synthetic values intentionally repeat and have gaps to exercise sorting and
+/// null placement in the table.
 fn amount(id: usize) -> Option<f64> {
     (!id.is_multiple_of(17)).then_some(((id * 7919) % 90000) as f64 / 100.)
 }
 
+/// Mark two of every three fixture row IDs as active, deterministically.
 fn active(id: usize) -> bool {
     !id.is_multiple_of(3)
 }
 
+/// Construct the fixture schema, optionally adding list and struct columns.
+///
+/// Scalar fields are always present, including in zero-row results; `nested`
+/// controls whether tags and profile fields are included.
 fn schema(nested: bool) -> SchemaRef {
     let mut fields = vec![
         Field::new("id", DataType::Int64, false),
@@ -191,24 +218,41 @@ fn schema(nested: bool) -> SchemaRef {
     Arc::new(Schema::new(fields))
 }
 
-// Materialize at most 256 rows per pull from the selected row IDs.
+/// Selected fixture row IDs and the next position to materialize.
+///
+/// The cursor retains IDs rather than a full string matrix. It generates at most
+/// 256 rows per pull and shares the query's cancellation token.
 struct MockCursor {
+    /// Schema shared by every generated batch, including empty query results.
     schema: SchemaRef,
+    /// Selected zero-based fixture IDs in final display order.
     ids: Vec<usize>,
+    /// Next position in `ids` to materialize, not the original Browse offset.
     offset: usize,
+    /// Whether generated batches include the tags list and profile struct.
     nested: bool,
+    /// Query token checked before generating each batch.
     cancellation: Cancellation,
 }
 
 impl BatchCursor for MockCursor {
+    /// Clone the fixture schema without consuming or materializing any rows.
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
 
+    /// Return the exact selected-ID count after the fixture's range or SQL preset.
+    ///
+    /// This is the cursor result count, not the original source's total row count.
     fn total_rows(&self) -> Option<usize> {
         Some(self.ids.len())
     }
 
+    /// Materialize the next at-most-256 selected fixture rows into typed Arrow arrays.
+    ///
+    /// Produces optional lists and structs when requested, advances the ID offset and
+    /// returns `None` when exhausted. Cancellation and Arrow construction errors are
+    /// propagated before a successful batch is returned.
     fn next_batch(&mut self) -> Result<Option<RecordBatch>, QueryError> {
         self.cancellation.check()?;
         if self.offset == self.ids.len() {
@@ -283,6 +327,9 @@ mod tests {
     use super::*;
     use rowglide_app::{Preview, Sort};
 
+    /// Verify that Browse ranges follow global filtering/sorting and SQL ignores them.
+    ///
+    /// Also checks empty ranges, oversized offsets and preservation of an empty schema.
     #[test]
     fn browse_window_follows_filter_and_sort() -> Result<(), Box<dyn std::error::Error>> {
         let cancel = Cancellation::default();
@@ -332,6 +379,10 @@ mod tests {
         Ok(())
     }
 
+    /// Check that the bounded preview starts with globally sorted rows.
+    ///
+    /// Consumes full cursors in both sort directions to ensure nulls remain last even
+    /// outside the retained preview.
     #[test]
     fn sorting_precedes_preview_limit_and_nulls_stay_last() -> Result<(), Box<dyn std::error::Error>>
     {
@@ -384,6 +435,7 @@ mod tests {
         Ok(())
     }
 
+    /// Check cooperative cancellation, schema availability for empty data and SQL rejection.
     #[test]
     fn cancellation_empty_schema_and_sql_errors() -> Result<(), Box<dyn std::error::Error>> {
         let cancel = Cancellation::default();

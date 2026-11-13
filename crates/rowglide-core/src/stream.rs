@@ -18,13 +18,23 @@ use std::{
     time::Duration,
 };
 
-/// Repeated interrupts cover the race between prepare and execute.
+/// Owns a cancellation-monitor thread for one DuckDB connection.
+///
+/// Once cancellation is requested, repeated interrupts cover races between query
+/// preparation and execution. Dropping the monitor stops and joins its thread.
 pub(crate) struct Interrupt {
+    /// Separate monitor-shutdown flag; does not change the request cancellation token.
     stop: Arc<AtomicBool>,
+    /// Owned monitor thread, taken and joined exactly once during drop.
     worker: Option<JoinHandle<()>>,
 }
 
 impl Interrupt {
+    /// Start a monitor that checks cancellation and interrupts the connection every 10 ms.
+    ///
+    /// The monitor owns an interrupt handle, not the connection. Returns a backend
+    /// error if its thread cannot be created; its lifetime should stay within that of
+    /// the query's connection.
     pub(crate) fn new(conn: &Connection, cancel: Cancellation) -> Result<Self, QueryError> {
         let handle = conn.interrupt_handle();
         let stop = Arc::new(AtomicBool::new(false));
@@ -48,6 +58,10 @@ impl Interrupt {
 }
 
 impl Drop for Interrupt {
+    /// Signal the interrupt monitor to stop and wait for its thread to finish.
+    ///
+    /// A thread panic is ignored during cleanup. Joining may briefly block, so the
+    /// monitor is owned by background query work.
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
         if let Some(worker) = self.worker.take() {
@@ -56,22 +70,43 @@ impl Drop for Interrupt {
     }
 }
 
+/// Worker-to-cursor protocol: schema first, followed by batches and a terminal event.
+///
+/// An explicit End distinguishes successful exhaustion from an unexpected channel
+/// disconnection. Error carries execution or transport failures to the consumer.
 enum Message {
+    /// Initial result schema, sent before any row batches.
     Schema(SchemaRef),
+    /// One owned typed batch handed from producer to consumer.
     Batch(RecordBatch),
+    /// Successful query exhaustion; distinct from channel disconnection.
     End,
+    /// Terminal query failure, including normalized cancellation errors.
     Error(QueryError),
 }
 
+/// Owns the receiving end of one query stream and the worker's lifetime.
+///
+/// Creation consumes the initial schema message. Subsequent pulls block for typed
+/// batches; dropping the cursor cancels execution and joins the worker.
 struct Cursor {
+    /// Schema retained after the startup handshake consumes the Schema message.
     schema: SchemaRef,
+    /// Removed before joining so a producer blocked on send can exit.
     receiver: Option<Receiver<Message>>,
+    /// Shared token checked by receiving code and the query's interrupt monitor.
     cancel: Cancellation,
+    /// Producer thread whose connection and spill directory live until it exits.
     worker: Option<JoinHandle<()>>,
+    /// Set after an End or Error message; later pulls return no additional batch.
     ended: bool,
 }
 
 impl Cursor {
+    /// Wait for one protocol message, checking cancellation every 20 ms.
+    ///
+    /// Returns cancellation when the token is set or the receiver was removed. An
+    /// unexpected disconnect is a backend error, never successful EOF.
     fn receive(&self) -> Result<Message, QueryError> {
         let receiver = self.receiver.as_ref().ok_or(QueryError::Cancelled)?;
         loop {
@@ -90,12 +125,19 @@ impl Cursor {
 }
 
 impl BatchCursor for Cursor {
+    /// Clone the result schema received during startup, including for empty results.
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
+    /// Return an unknown total because this streaming path does not run COUNT.
     fn total_rows(&self) -> Option<usize> {
         None
     }
+    /// Receive the next Arrow batch or terminal event from the query worker.
+    ///
+    /// End returns `None`; a worker error is propagated once and also marks the cursor
+    /// ended. Later pulls on an ended cursor return `None`, so consumers must retain
+    /// the original error rather than treating a retry as successful completion.
     fn next_batch(&mut self) -> Result<Option<RecordBatch>, QueryError> {
         if self.ended {
             return Ok(None);
@@ -116,6 +158,11 @@ impl BatchCursor for Cursor {
 }
 
 impl Drop for Cursor {
+    /// Cancel the request, disconnect the receiver and join the query worker.
+    ///
+    /// Disconnecting before joining releases a producer blocked on the bounded channel.
+    /// Joining may block until DuckDB responds to interruption; drop this cursor off
+    /// the GUI thread. Worker panics are ignored during cleanup.
     fn drop(&mut self) {
         self.cancel.cancel();
         // Disconnect first so a producer blocked by backpressure can exit.
@@ -126,6 +173,12 @@ impl Drop for Cursor {
     }
 }
 
+/// Spawn a query worker and wait for its first schema or error message.
+///
+/// A capacity-one channel provides backpressure between production and consumption.
+/// Returns an owned cursor only after schema arrival; thread creation, cancellation
+/// and startup failures propagate after cleanup. The caller must run in background
+/// because waiting for schema and dropping a failed cursor can block.
 pub(crate) fn start(
     file: FileSource,
     query: Query,
@@ -164,6 +217,13 @@ pub(crate) fn start(
     }
 }
 
+/// Run one DuckDB query under the engine gate and send its Arrow result stream.
+///
+/// Owns the connection, interrupt monitor and private spill directory for the entire
+/// stream. Sends schema before batches, rejects any batch over 16 MiB and sends End
+/// only on successful exhaustion. A disconnected batch receiver stops production;
+/// other failures are returned to `start` for error delivery. Bounded sends may
+/// block until the consumer advances or drops its cursor.
 fn produce(
     file: FileSource,
     query: Query,

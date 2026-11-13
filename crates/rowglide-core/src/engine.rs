@@ -11,25 +11,47 @@ use std::{
     time::Duration,
 };
 
+/// Registered local file metadata plus the schema obtained during inspection.
+///
+/// The canonical path identifies duplicate registrations. The schema is a snapshot;
+/// queries reopen the file, so later external modifications are not isolated.
 #[derive(Clone)]
 pub(crate) struct FileSource {
+    /// Stable registry handle and display metadata returned to callers.
     pub(crate) info: Source,
+    /// Canonical local path reused for each independent query scan.
     pub(crate) path: PathBuf,
+    /// Source schema captured when the file was first registered.
     pub(crate) schema: SchemaRef,
 }
 
-/// Files remain on disk; each query scans only what DuckDB needs.
+/// Local-file registry and serialized DuckDB query backend.
+///
+/// Registration and execution share one engine gate, limiting concurrent engine
+/// budgets. Every query opens its own in-memory connection and scans the source
+/// file directly; the registry holds neither result buffers nor live GUI objects.
 #[derive(Default)]
 pub struct DuckDbBackend {
+    /// Registered sources; vector indices are their backend-local IDs.
     files: Mutex<Vec<FileSource>>,
-    // Serialize query engines so rapid GUI requests cannot multiply budgets.
+    /// Serializes inspection and execution so requests cannot multiply engine budgets.
     gate: Arc<Mutex<()>>,
 }
 
+/// Convert an engine, I/O or thread error into a displayable backend failure.
+///
+/// This preserves its message as text; it does not retain the original error type
+/// or an error-source chain.
 pub(crate) fn error(error: impl std::fmt::Display) -> QueryError {
     QueryError::Backend(error.to_string())
 }
 
+/// Open an in-memory DuckDB connection with bounded execution resources.
+///
+/// Uses up to four threads, 512 MB engine memory and a 2 GB spill budget under
+/// `temp`. Preserves source insertion order and disables automatic extension
+/// loading/installing. The caller owns and cleans up the temporary directory.
+/// Configuration or connection failures are returned as backend errors.
 pub(crate) fn connection(temp: &Path) -> Result<Connection, QueryError> {
     let threads = thread::available_parallelism().map_or(2, |n| n.get().min(4));
     let config = Config::default()
@@ -50,6 +72,11 @@ pub(crate) fn connection(temp: &Path) -> Result<Connection, QueryError> {
     Connection::open_in_memory_with_flags(config).map_err(error)
 }
 
+/// Expose a local file as the connection-local `current_file` view.
+///
+/// Binds the UTF-8 path through a DuckDB variable rather than SQL interpolation.
+/// `PARQUET` selects the Parquet reader; registry-validated CSV sources use bounded
+/// automatic inference. Returns errors for non-UTF-8 paths or reader/view setup.
 pub(crate) fn register(conn: &Connection, path: &Path, format: &str) -> Result<(), QueryError> {
     let path = path
         .to_str()
@@ -64,6 +91,11 @@ pub(crate) fn register(conn: &Connection, path: &Path, format: &str) -> Result<(
     conn.execute_batch(sql).map_err(error)
 }
 
+/// Wait for exclusive engine access while checking cancellation between attempts.
+///
+/// Uses short sleeps rather than an uninterruptible mutex lock. Returns a guard
+/// that keeps the engine reserved, or an error for cancellation or a poisoned gate.
+/// Call only from background work.
 pub(crate) fn lock_engine<'a>(
     gate: &'a Mutex<()>,
     cancel: &Cancellation,
@@ -79,6 +111,10 @@ pub(crate) fn lock_engine<'a>(
 }
 
 impl Backend for DuckDbBackend {
+    /// Clone the registered-source metadata under the registry lock.
+    ///
+    /// Returns an empty snapshot if the registry mutex is poisoned; no file inspection
+    /// or query execution is performed here.
     fn sources(&self) -> Vec<Source> {
         self.files.lock().map_or_else(
             |_| vec![],
@@ -86,6 +122,13 @@ impl Backend for DuckDbBackend {
         )
     }
 
+    /// Canonicalize, validate and inspect a CSV/Parquet path before registering it.
+    ///
+    /// Duplicate canonical paths reuse their existing ID. New files are inspected under
+    /// the engine gate using a zero-row query to obtain schema without counting rows.
+    /// The registry is checked again before insertion to handle concurrent opens.
+    /// Errors include unsupported formats, missing files, cancellation and DuckDB
+    /// inspection failures. The returned source has an unknown row count.
     fn open(&self, path: &Path, cancel: Cancellation) -> Result<Source, QueryError> {
         cancel.check()?;
         let path = path.canonicalize().map_err(error)?;
@@ -143,6 +186,11 @@ impl Backend for DuckDbBackend {
         Ok(info)
     }
 
+    /// Resolve a registered source and start its background Arrow stream.
+    ///
+    /// Returns an error for cancellation, an unavailable source or stream startup
+    /// failure. Startup waits for the result schema, so this method must run off the
+    /// GUI thread even though execution owns a separate worker.
     fn query(
         &self,
         query: Query,

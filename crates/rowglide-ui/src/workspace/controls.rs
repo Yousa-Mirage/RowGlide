@@ -12,7 +12,10 @@ use gpui_kit::*;
 use rowglide_app::{BrowsePage, Query};
 
 impl Workspace {
-    // File tabs restore the selected file session.
+    /// Build Folder Tabs for registered sources and select the active file.
+    ///
+    /// Clicking another tab delegates session saving, cancellation and restoration to
+    /// the workspace; this renderer does not open or query files.
     pub(super) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         TabBar::new("open-file-tabs")
             .folder()
@@ -27,7 +30,11 @@ impl Workspace {
             )
     }
 
-    // Compact browse controls and SQL panel toggle.
+    /// Build the compact Browse filter, Limit/Offset, Apply/Reset and SQL toggle row.
+    ///
+    /// SQL mode disables Browse inputs and actions. Apply validates drafts before
+    /// querying; Reset restores the default first page. Toggling modes restores the
+    /// other mode's independent state without automatically executing SQL.
     pub(super) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = rgb(0xe4e8e7);
         let sql_mode = self.active_tab().mode == TabMode::Sql;
@@ -98,7 +105,10 @@ impl Workspace {
             )
     }
 
-    // SQL editor; execution remains coordinated by Workspace.
+    /// Build the SQL editor panel and explicit Run query action.
+    ///
+    /// The hint names the `current_file` relation and accurately describes the current
+    /// bounded-preview implementation. Browse pagination controls do not govern SQL.
     pub(super) fn render_sql(&self, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .p_4()
@@ -139,7 +149,11 @@ impl Workspace {
             )
     }
 
-    // Bottom status bar: query status, cancellation, and sample-data label.
+    /// Build the compact status bar with mode, errors, reload/cancel and navigation.
+    ///
+    /// Browse-only Previous/Next buttons use the applied page and reject pending drafts
+    /// or busy queries. Missing cached results can be reloaded explicitly. Status text
+    /// reports actual retained ranges rather than an uncomputed source total.
     pub(super) fn render_status(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = rgb(0xe4e8e7);
         div()
