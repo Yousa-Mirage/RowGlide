@@ -151,3 +151,21 @@ fn ignores_symbolic_links() -> Result<(), Box<dyn Error>> {
     assert!(linked_lease.exists());
     Ok(())
 }
+
+/// Cleanup accounting waits for the coordinator and runs only after files are removed.
+#[test]
+fn cleanup_callback_waits_for_removal() -> Result<(), Box<dyn Error>> {
+    let root = tempfile::tempdir()?;
+    let mut directory = Directory::create_in(root.path())?;
+    let path = directory.path().to_path_buf();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    directory.on_cleanup(move || {
+        let _ = sender.send(!path.exists());
+    });
+    let guard = super::lock_root(root.path())?;
+    drop(directory);
+    assert!(receiver.recv_timeout(Duration::from_millis(20)).is_err());
+    drop(guard);
+    assert!(receiver.recv_timeout(Duration::from_secs(5))?);
+    Ok(())
+}

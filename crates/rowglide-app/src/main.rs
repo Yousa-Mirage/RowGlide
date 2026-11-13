@@ -11,7 +11,7 @@ use std::sync::Arc;
 /// Backend selection happens here so the UI can also be launched with another
 /// implementation of the same contract, such as the deterministic mock backend.
 /// Startup cache recovery runs in the background and preserves other live instances.
-fn main() {
+fn main() -> Result<(), rowglide_core::QueryError> {
     if let Err(error) = std::thread::Builder::new()
         .name("cache-recovery".into())
         .spawn(|| {
@@ -22,5 +22,9 @@ fn main() {
     {
         eprintln!("Cannot start temporary cache recovery: {error}");
     }
-    rowglide_ui::run(Arc::new(DuckDbBackend::default()));
+    rowglide_ui::run(
+        Arc::new(DuckDbBackend::default()),
+        rowglide_core::ResultStore::new(rowglide_core::CacheLimits::default())?,
+    );
+    Ok(())
 }

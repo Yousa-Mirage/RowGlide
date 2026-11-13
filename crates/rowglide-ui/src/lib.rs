@@ -11,13 +11,13 @@ use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 use std::sync::Arc;
 
-/// Initialize GPUI Kit and run the native window with the supplied backend.
+/// Initialize GPUI Kit with the supplied backend and application-wide SQL result store.
 ///
 /// Installs assets and the light theme, creates the workspace and quits when the
 /// last window closes. The caller selects and constructs the backend; this layer
 /// depends only on its shared interface. Invoke from the application's main
 /// thread. Window creation failures are printed to stderr before quitting.
-pub fn run(backend: Arc<dyn rowglide_core::Backend>) {
+pub fn run(backend: Arc<dyn rowglide_core::Backend>, results: Arc<rowglide_core::ResultStore>) {
     application().with_assets(assets::Assets).run(move |cx| {
         init(cx);
         Theme::change(ThemeMode::Light, None, cx);
@@ -44,7 +44,7 @@ pub fn run(backend: Arc<dyn rowglide_core::Backend>) {
         };
 
         if let Err(error) = open_window(options, cx, move |window, cx| {
-            cx.new(|cx| workspace::Workspace::new(backend, window, cx))
+            cx.new(|cx| workspace::Workspace::new(backend, results, window, cx))
         }) {
             eprintln!("Cannot open Rowglide: {error}");
             cx.quit();

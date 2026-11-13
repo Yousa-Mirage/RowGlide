@@ -30,6 +30,8 @@ pub(crate) struct Workspace {
     // Dataset and active query.
     /// Shared engine-independent backend injected by the application entry point.
     backend: Arc<dyn Backend>,
+    /// One SQL result budget shared by all open tabs.
+    results: Arc<rowglide_core::ResultStore>,
     /// Open file sessions in Folder Tabs order.
     tabs: Vec<TabState>,
     /// Index of the selected session; only accessed when tabs is nonempty.
@@ -91,6 +93,7 @@ impl Workspace {
     /// file-opening view. File inspection and query execution use background work.
     pub(crate) fn new(
         backend: Arc<dyn Backend>,
+        results: Arc<rowglide_core::ResultStore>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -168,6 +171,7 @@ impl Workspace {
             active_tab: 0,
             query: Query::default(),
             backend,
+            results,
             table,
             search,
             limit,

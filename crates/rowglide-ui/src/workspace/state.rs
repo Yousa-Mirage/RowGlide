@@ -496,6 +496,7 @@ mod tests {
         let mut handles = Vec::new();
         for (index, tab) in tabs.iter_mut().enumerate() {
             let result = Arc::new(QueryResult::start(
+                rowglide_core::ResultStore::new(rowglide_core::CacheLimits::default())?,
                 Arc::new(rowglide_core::MockBackend),
                 Query::default(),
                 rowglide_core::Cancellation::default(),

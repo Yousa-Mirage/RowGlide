@@ -23,6 +23,8 @@ pub(crate) struct Directory {
     path: PathBuf,
     /// Exclusive OS lease; dropping it after a crash makes the directory reclaimable.
     lease: Option<File>,
+    /// Optional accounting release invoked only after successful directory removal.
+    on_cleanup: Option<Box<dyn FnOnce() + Send + Sync>>,
 }
 
 impl Directory {
@@ -47,7 +49,13 @@ impl Directory {
         Ok(Self {
             path: temp.keep(),
             lease: Some(lease),
+            on_cleanup: None,
         })
+    }
+
+    /// Install a nonblocking accounting callback; failed cleanup deliberately retains charges.
+    pub(crate) fn on_cleanup(&mut self, callback: impl FnOnce() + Send + Sync + 'static) {
+        self.on_cleanup = Some(Box::new(callback));
     }
 
     /// Borrow the directory path while its ownership keeps recovery from deleting it.
@@ -65,11 +73,14 @@ impl Drop for Directory {
             return;
         };
         let path = self.path.clone();
+        let on_cleanup = self.on_cleanup.take();
         if let Err(error) = thread::Builder::new()
             .name("cache-cleanup".into())
             .spawn(move || {
                 if let Err(error) = remove_owned(&path, lease) {
                     eprintln!("Cannot remove temporary cache {}: {error}", path.display());
+                } else if let Some(callback) = on_cleanup {
+                    callback();
                 }
             })
         {

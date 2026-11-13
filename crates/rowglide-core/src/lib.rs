@@ -23,4 +23,6 @@ mod session;
 pub use session::{QuerySession, SessionEvent};
 
 mod result;
-pub use result::{QueryResult, ResultLimits, ResultPhase, ResultSnapshot};
+pub use result::{
+    CacheLimits, CacheUsage, QueryResult, ResultLimits, ResultPhase, ResultSnapshot, ResultStore,
+};

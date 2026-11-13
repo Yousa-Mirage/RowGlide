@@ -49,6 +49,7 @@ fn sql_semantics_and_nested_recovery() -> Result<(), Box<dyn std::error::Error>>
             ..Query::default()
         };
         let result = QueryResult::start(
+            rowglide_core::ResultStore::new(rowglide_core::CacheLimits::default())?,
             backend.clone(),
             query,
             Cancellation::default(),
@@ -100,6 +101,7 @@ fn cancel_running_sql_then_recover() -> Result<(), Box<dyn std::error::Error>> {
     let backend = Arc::new(DuckDbBackend::default());
     backend.open(&path, Cancellation::default())?;
     let result = QueryResult::start(
+        rowglide_core::ResultStore::new(rowglide_core::CacheLimits::default())?,
         backend.clone(),
         Query {
             sql: Some(
@@ -115,6 +117,7 @@ fn cancel_running_sql_then_recover() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(result.snapshot().phase, ResultPhase::Cancelled);
     drop(result);
     let next = QueryResult::start(
+        rowglide_core::ResultStore::new(rowglide_core::CacheLimits::default())?,
         backend,
         Query {
             sql: Some("SELECT * FROM current_file".into()),

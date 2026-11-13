@@ -1,18 +1,26 @@
 //! Append-only Arrow IPC segments with exact disk accounting and asynchronous deletion.
 
+use super::budget::Resources;
 use crate::{QueryError, temporary::Directory};
 use arrow_array::RecordBatch;
 use arrow_ipc::{reader::StreamReader, writer::StreamWriter};
 use std::{
     fs::File,
     io::{self, BufReader, Read, Seek, SeekFrom, Write},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 /// Shared temporary file lifetime; the last owner schedules deletion off the GUI thread.
 pub(super) struct Disk {
     /// Leased directory removed only after writer and readers release their references.
     directory: Directory,
+    /// Exact bytes written, including incomplete IPC streams.
+    bytes: Arc<AtomicU64>,
+    /// Shared quota reserved before each filesystem write.
+    resources: Arc<Resources>,
 }
 
 impl Disk {
@@ -23,11 +31,24 @@ impl Disk {
     }
 
     /// Create a private temporary file and return its writer plus shared lifetime handle.
-    pub(super) fn create() -> Result<(Arc<Self>, File), QueryError> {
-        let directory = Directory::create()?;
+    pub(super) fn create(resources: Arc<Resources>) -> Result<(Arc<Self>, File), QueryError> {
+        let mut directory = Directory::create()?;
+        let bytes = Arc::new(AtomicU64::new(0));
+        let cleanup_bytes = bytes.clone();
+        let cleanup_resources = resources.clone();
+        directory.on_cleanup(move || {
+            cleanup_resources.release_disk(cleanup_bytes.load(Ordering::Acquire))
+        });
         let file =
             File::create_new(directory.path().join("result.arrow")).map_err(QueryError::CacheIo)?;
-        Ok((Arc::new(Self { directory }), file))
+        Ok((
+            Arc::new(Self {
+                directory,
+                bytes,
+                resources,
+            }),
+            file,
+        ))
     }
 
     /// Read exactly one committed IPC segment, preserving nested types and nulls.
@@ -51,6 +72,8 @@ struct LimitedWriter<'a> {
     file: &'a mut File,
     /// Remaining bytes allowed, including IPC schema and footer overhead.
     remaining: u64,
+    /// Lifetime and global quota for the file being appended.
+    disk: &'a Disk,
 }
 
 impl Write for LimitedWriter<'_> {
@@ -61,7 +84,20 @@ impl Write for LimitedWriter<'_> {
                 "SQL result exceeds the disk cache budget; narrow the query or add LIMIT",
             ));
         }
-        let written = self.file.write(bytes)?;
+        let reserved = bytes.len() as u64;
+        self.disk
+            .resources
+            .reserve_disk(reserved)
+            .map_err(io::Error::other)?;
+        let written = match self.file.write(bytes) {
+            Ok(written) => written,
+            Err(error) => {
+                self.disk.resources.release_disk(reserved);
+                return Err(error);
+            }
+        };
+        self.disk.resources.release_disk(reserved - written as u64);
+        self.disk.bytes.fetch_add(written as u64, Ordering::AcqRel);
         self.remaining -= written as u64;
         Ok(written)
     }
@@ -76,11 +112,16 @@ impl Write for LimitedWriter<'_> {
 /// Returns its byte length; partial writes on error are never added to the row index.
 pub(super) fn append(
     file: &mut File,
+    disk: &Disk,
     batch: &RecordBatch,
     remaining: u64,
 ) -> Result<u64, QueryError> {
     let start = file.stream_position().map_err(QueryError::CacheIo)?;
-    let limited = LimitedWriter { file, remaining };
+    let limited = LimitedWriter {
+        file,
+        remaining,
+        disk,
+    };
     let mut writer = StreamWriter::try_new(limited, batch.schema().as_ref())?;
     writer.write(batch)?;
     writer.finish()?;
@@ -105,7 +146,7 @@ mod tests {
     /// Missing cache files retain an inspectable I/O cause and a user-facing cache label.
     #[test]
     fn missing_cache_file_preserves_io_source() -> Result<(), Box<dyn Error>> {
-        let (disk, writer) = Disk::create()?;
+        let (disk, writer) = Disk::create(super::Resources::new(crate::CacheLimits::default())?)?;
         drop(writer);
         std::fs::remove_file(disk.path())?;
         let error = disk.read(0, 1).err().ok_or("Missing file was readable")?;

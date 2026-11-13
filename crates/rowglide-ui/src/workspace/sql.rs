@@ -10,6 +10,7 @@ impl Workspace {
     /// Propagate startup errors to the query UI boundary; execution errors arrive in snapshots.
     pub(super) fn start_sql(&mut self, cx: &mut Context<Self>) -> Result<(), QueryError> {
         let result = QueryResult::start(
+            self.results.clone(),
             self.backend.clone(),
             self.query.clone(),
             self.cancellation.clone(),

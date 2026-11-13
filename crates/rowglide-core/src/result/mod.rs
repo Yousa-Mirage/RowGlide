@@ -1,14 +1,26 @@
-//! Complete query result spooling with bounded memory, disk and index retention.
+//! Memory-first SQL results with shared budgets, incremental spill and asynchronous rereads.
 
+mod budget;
 mod disk;
+mod store;
+#[cfg(test)]
+mod tests;
+
+use budget::MemoryCharge;
+pub use budget::{CacheLimits, CacheUsage};
+pub use store::ResultStore;
 
 use crate::{Backend, Cancellation, Query, QueryError, QuerySession, SessionEvent};
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use async_channel::{Receiver, Sender};
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    sync::{Arc, Mutex, MutexGuard, mpsc},
+    collections::{HashMap, HashSet},
+    sync::{
+        Arc, Mutex, MutexGuard,
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
     thread,
     time::Duration,
 };
@@ -16,20 +28,20 @@ use std::{
 /// Resource limits for one retained SQL result, separate from DuckDB's execution budget.
 #[derive(Clone, Copy)]
 pub struct ResultLimits {
-    /// Maximum cached Arrow buffer bytes; external inspector references are additional.
+    /// Optional per-result memory ceiling, also subject to the store's shared budget.
     pub memory_bytes: usize,
-    /// Maximum IPC file bytes, including per-segment schema overhead.
+    /// Optional per-result disk ceiling, also subject to the store's shared budget.
     pub disk_bytes: u64,
     /// Maximum segment-index entries, bounding metadata even for tiny batches.
     pub batches: usize,
 }
 
 impl Default for ResultLimits {
-    /// Keep 64 MiB of Arrow buffers and at most 2 GiB / 65,536 segments on disk.
+    /// Let the shared store govern bytes, while bounding each result to 65,536 segments.
     fn default() -> Self {
         Self {
-            memory_bytes: 64 * 1024 * 1024,
-            disk_bytes: 2 * 1024 * 1024 * 1024,
+            memory_bytes: usize::MAX,
+            disk_bytes: u64::MAX,
             batches: 65536,
         }
     }
@@ -40,7 +52,7 @@ impl Default for ResultLimits {
 pub enum ResultPhase {
     /// Waiting for schema or continuously producing more rows.
     Running,
-    /// Every row was committed to disk and the query cursor has been released.
+    /// Every row was retained in memory or on disk and the query cursor has been released.
     Complete,
     /// User interrupted execution; retained rows are a partial result.
     Cancelled,
@@ -53,7 +65,7 @@ pub enum ResultPhase {
 pub struct ResultSnapshot {
     /// Result schema once startup has produced it, including for empty results.
     pub schema: Option<SchemaRef>,
-    /// Number of rows fully written to indexed segments in the temporary result file.
+    /// Number of rows retained in memory or fully written to indexed disk segments.
     pub rows: usize,
     /// Current terminal or running state of the result.
     pub phase: ResultPhase,
@@ -63,13 +75,15 @@ pub struct ResultSnapshot {
     pub disk_bytes: u64,
 }
 
-/// One committed batch's row range and byte range within the private IPC file.
+/// One retained batch's row range and optional location in the private IPC file.
 #[derive(Clone, Copy)]
 struct Segment {
     /// First zero-based result row in this batch.
     start: usize,
     /// Number of rows in the batch.
     rows: usize,
+    /// Whether this batch has a durable IPC copy and can be evicted.
+    persisted: bool,
     /// Starting IPC stream offset.
     offset: u64,
     /// Length of the independent IPC stream.
@@ -82,14 +96,18 @@ struct State {
     snapshot: ResultSnapshot,
     /// Increasing row ranges; binary search locates a batch for any generated row.
     segments: Vec<Segment>,
-    /// Least recently used batches at the front, most recent at the back.
-    cache: VecDeque<(usize, RecordBatch)>,
+    /// Constant-time batch lookup; worker reclamation uses each entry's access stamp.
+    cache: HashMap<usize, CachedBatch>,
     /// At most eight queued reads plus one in-progress read, deduplicated by segment index.
     pending: HashSet<usize>,
-    /// Shared file lifetime, initialized by the writer worker.
+    /// Shared file lifetime, initialized lazily during worker-driven spill.
     disk: Option<Arc<disk::Disk>>,
     /// A failed read prevents repeated attempts from causing a render/error loop.
     read_failed: bool,
+    /// New batches go directly to disk after the first memory-pressure spill.
+    disk_mode: bool,
+    /// Prevent retries after a partial write; existing memory-only rows remain intact.
+    spill_failed: bool,
 }
 
 /// Worker-shared state that outlives the UI handle until background cleanup finishes.
@@ -104,6 +122,22 @@ struct Shared {
     shutdown: Cancellation,
     /// Immutable per-result resource budgets.
     limits: ResultLimits,
+    /// Global coordination and accounting shared by all result handles.
+    store: Arc<ResultStore>,
+    /// Lazily opened writer; only accessed under the store's worker gate.
+    writer: Mutex<Option<(std::fs::File, Arc<disk::Disk>)>>,
+    /// Monotonic last-access stamp used to select a result for reclamation.
+    touched: AtomicU64,
+}
+
+/// An owned batch and its retained-memory reservation; shallow GUI clones are additional.
+struct CachedBatch {
+    /// Typed arrays shared with the table and inspector on demand.
+    batch: RecordBatch,
+    /// Dropping the entry releases its contribution to the global budget.
+    charge: MemoryCharge,
+    /// Logical last access used for batch eviction within a result.
+    touched: u64,
 }
 
 impl Shared {
@@ -126,26 +160,6 @@ impl Shared {
         drop(state);
         self.notify();
     }
-
-    /// Retain a decoded batch within the memory budget by evicting least-recent entries.
-    fn cache(&self, state: &mut State, index: usize, batch: RecordBatch) -> Result<(), QueryError> {
-        let bytes = buffer_bytes(&batch);
-        if bytes > self.limits.memory_bytes {
-            return Err(disk::error(
-                "A batch exceeds the memory cache budget; select smaller values",
-            ));
-        }
-        while state.snapshot.memory_bytes.saturating_add(bytes) > self.limits.memory_bytes {
-            if let Some((_, old)) = state.cache.pop_front() {
-                state.snapshot.memory_bytes -= buffer_bytes(&old);
-            } else {
-                break;
-            }
-        }
-        state.snapshot.memory_bytes += bytes;
-        state.cache.push_back((index, batch));
-        Ok(())
-    }
 }
 
 /// Readable SQL result whose writer runs continuously independently of scrolling.
@@ -165,9 +179,11 @@ pub struct QueryResult {
 
 impl QueryResult {
     /// Start writer/reader workers without performing file I/O on the caller's thread.
+    /// Pass the same store for all tabs to enforce one shared budget.
     /// Returns an error for invalid budgets or thread startup; production failures
     /// appear in snapshots. The caller's token controls generation, not cache reads.
     pub fn start(
+        store: Arc<ResultStore>,
         backend: Arc<dyn Backend>,
         query: Query,
         cancel: Cancellation,
@@ -187,16 +203,22 @@ impl QueryResult {
                     disk_bytes: 0,
                 },
                 segments: Vec::new(),
-                cache: VecDeque::new(),
+                cache: HashMap::new(),
                 pending: HashSet::new(),
                 disk: None,
                 read_failed: false,
+                disk_mode: false,
+                spill_failed: false,
             }),
             updates: updates_tx,
             cancel,
             shutdown: Cancellation::default(),
             limits,
+            touched: AtomicU64::new(store.tick()),
+            store: store.clone(),
+            writer: Mutex::new(None),
         });
+        store.register(&shared);
         let (reads, receiver) = mpsc::sync_channel(8);
         let result = Self {
             shared: shared.clone(),
@@ -242,6 +264,9 @@ impl QueryResult {
     /// Never reads disk during rendering. The bounded queue deduplicates pending batches;
     /// a later render retries if the queue is full. Returned arrays may outlive eviction.
     pub fn row(&self, row: usize) -> Option<(RecordBatch, usize)> {
+        self.shared
+            .touched
+            .store(self.shared.store.tick(), Ordering::Relaxed);
         let mut state = self.shared.state();
         let index = state
             .segments
@@ -251,13 +276,12 @@ impl QueryResult {
         if row >= segment.start + segment.rows {
             return None;
         }
-        if let Some(position) = state.cache.iter().position(|(id, _)| *id == index) {
-            let entry = state.cache.remove(position)?;
-            let batch = entry.1.clone();
-            state.cache.push_back(entry);
-            return Some((batch, row - segment.start));
+        if let Some(entry) = state.cache.get_mut(&index) {
+            entry.touched = self.shared.store.tick();
+            return Some((entry.batch.clone(), row - segment.start));
         }
-        if !state.read_failed
+        if segment.persisted
+            && !state.read_failed
             && !state.pending.contains(&index)
             && self.reads.try_send(index).is_ok()
         {
@@ -309,15 +333,13 @@ fn buffer_bytes(batch: &RecordBatch) -> usize {
         .fold(metadata, |sum, bytes| sum.saturating_add(*bytes))
 }
 
-/// Spool every delivered batch, publishing row ranges only after complete segment writes.
-/// The first batch is cached immediately; later batches stay on disk until visible.
+/// Pull continuously with bounded transport, pausing consumption during cache reclamation.
+/// Only fully retained batches become visible; storage failure preserves earlier rows.
 fn write_result(
     shared: &Shared,
     backend: Arc<dyn Backend>,
     query: Query,
 ) -> Result<(), QueryError> {
-    let (disk, mut file) = disk::Disk::create()?;
-    shared.state().disk = Some(disk);
     let session = QuerySession::start(backend, query, shared.cancel.clone())?;
     loop {
         shared.cancel.check()?;
@@ -327,46 +349,10 @@ fn write_result(
                 shared.notify();
             }
             SessionEvent::Batch(batch) => {
-                if batch.num_rows() == 0 {
-                    continue;
+                if batch.num_rows() != 0 {
+                    shared.store.append(shared, batch)?;
+                    shared.notify();
                 }
-                if buffer_bytes(&batch) > shared.limits.memory_bytes {
-                    return Err(disk::error(
-                        "A batch exceeds the memory cache budget; select smaller values",
-                    ));
-                }
-                let (count, offset, start) = {
-                    let state = shared.state();
-                    (
-                        state.segments.len(),
-                        state.snapshot.disk_bytes,
-                        state.snapshot.rows,
-                    )
-                };
-                if count >= shared.limits.batches {
-                    return Err(disk::error(
-                        "Result exceeds the batch index budget; narrow the query or add LIMIT",
-                    ));
-                }
-                let rows = start
-                    .checked_add(batch.num_rows())
-                    .ok_or_else(|| disk::error("Result row count overflow"))?;
-                let length = disk::append(&mut file, &batch, shared.limits.disk_bytes - offset)?;
-                shared.cancel.check()?;
-                let mut state = shared.state();
-                state.segments.push(Segment {
-                    start,
-                    rows: batch.num_rows(),
-                    offset,
-                    length,
-                });
-                state.snapshot.rows = rows;
-                state.snapshot.disk_bytes += length;
-                if count == 0 {
-                    shared.cache(&mut state, count, batch)?;
-                }
-                drop(state);
-                shared.notify();
             }
             SessionEvent::Complete => return Ok(()),
             SessionEvent::Failed(error) => return Err(error),
@@ -382,20 +368,12 @@ fn read_worker(shared: Arc<Shared>, receiver: mpsc::Receiver<usize>) {
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
-        let source = {
-            let state = shared.state();
-            state.disk.clone().zip(state.segments.get(index).copied())
-        };
-        let Some((disk, segment)) = source else {
-            continue;
-        };
-        let result = disk.read(segment.offset, segment.length);
+        let result = shared.store.read(&shared, index);
         if shared.shutdown.check().is_err() {
             break;
         }
         let mut state = shared.state();
         state.pending.remove(&index);
-        let result = result.and_then(|batch| shared.cache(&mut state, index, batch));
         if let Err(error) = result {
             state.read_failed = true;
             state.snapshot.phase = ResultPhase::Failed(error.to_string());
@@ -403,256 +381,5 @@ fn read_worker(shared: Arc<Shared>, receiver: mpsc::Receiver<usize>) {
         }
         drop(state);
         shared.notify();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::MockBackend;
-    use arrow_array::Int64Array;
-    use std::time::Instant;
-
-    /// Fixture whose cursor emits one batch and then waits for cancellation.
-    struct PausedBackend;
-
-    /// A single-batch cursor that keeps the query running until its token is cancelled.
-    struct PausedCursor {
-        /// Typed fixture data, emitted once before blocking.
-        batch: Option<RecordBatch>,
-        /// Schema remains available after the batch is delivered.
-        schema: SchemaRef,
-        /// Cancellation releases the blocked producer without a separate test signal.
-        cancel: Cancellation,
-    }
-
-    impl Backend for PausedBackend {
-        /// This fixture creates query data directly and has no registered files.
-        fn sources(&self) -> Vec<crate::Source> {
-            Vec::new()
-        }
-
-        /// Create one typed row followed by an intentionally unfinished stream.
-        fn query(
-            &self,
-            _: Query,
-            cancel: Cancellation,
-        ) -> Result<Box<dyn crate::BatchCursor>, QueryError> {
-            let batch = RecordBatch::try_from_iter([(
-                "id",
-                Arc::new(Int64Array::from(vec![42])) as arrow_array::ArrayRef,
-            )])?;
-            Ok(Box::new(PausedCursor {
-                schema: batch.schema(),
-                batch: Some(batch),
-                cancel,
-            }))
-        }
-    }
-
-    impl crate::BatchCursor for PausedCursor {
-        /// Return the fixture schema independently of stream progress.
-        fn schema(&self) -> SchemaRef {
-            self.schema.clone()
-        }
-
-        /// The deliberately unfinished stream does not advertise a total.
-        fn total_rows(&self) -> Option<usize> {
-            None
-        }
-
-        /// Emit one batch, then cooperatively block until the test cancels execution.
-        fn next_batch(&mut self) -> Result<Option<RecordBatch>, QueryError> {
-            if let Some(batch) = self.batch.take() {
-                return Ok(Some(batch));
-            }
-            loop {
-                self.cancel.check()?;
-                thread::sleep(Duration::from_millis(1));
-            }
-        }
-    }
-
-    /// A committed first batch is readable while the producer is still blocked on more data.
-    #[test]
-    fn rows_are_available_before_completion() -> Result<(), QueryError> {
-        let result = QueryResult::start(
-            Arc::new(PausedBackend),
-            Query::default(),
-            Cancellation::default(),
-            ResultLimits::default(),
-        )?;
-        let (batch, local) = row(&result, 0)?;
-        assert_eq!(batch.num_rows(), 1);
-        assert_eq!(local, 0);
-        assert_eq!(result.snapshot().phase, ResultPhase::Running);
-        result.cancel();
-        assert_eq!(result.snapshot().phase, ResultPhase::Cancelled);
-        assert!(result.row(0).is_some());
-        Ok(())
-    }
-
-    /// A damaged disk segment changes a completed result to an explicit read failure.
-    #[test]
-    fn cache_read_failure_is_not_success() -> Result<(), QueryError> {
-        let result = QueryResult::start(
-            Arc::new(MockBackend),
-            Query::default(),
-            Cancellation::default(),
-            ResultLimits::default(),
-        )?;
-        assert_eq!(finished(&result)?.phase, ResultPhase::Complete);
-        let path = result
-            .shared
-            .state()
-            .disk
-            .as_ref()
-            .map(|disk| disk.path())
-            .ok_or_else(|| disk::error("Missing file"))?;
-        std::fs::OpenOptions::new()
-            .write(true)
-            .open(path)
-            .and_then(|file| file.set_len(0))?;
-        assert!(row(&result, 49999).is_err());
-        assert!(matches!(result.snapshot().phase, ResultPhase::Failed(_)));
-        assert!(result.row(0).is_some());
-        Ok(())
-    }
-
-    /// Wait for a terminal phase with a deadline so worker regressions fail instead of hang.
-    fn finished(result: &QueryResult) -> Result<ResultSnapshot, QueryError> {
-        let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
-            let snapshot = result.snapshot();
-            if snapshot.phase != ResultPhase::Running {
-                return Ok(snapshot);
-            }
-            if Instant::now() > deadline {
-                return Err(disk::error("Timed out waiting for result"));
-            }
-            thread::sleep(Duration::from_millis(5));
-        }
-    }
-
-    /// Wait for a requested cached row while allowing the dedicated reader to restore it.
-    fn row(result: &QueryResult, row: usize) -> Result<(RecordBatch, usize), QueryError> {
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            if let Some(value) = result.row(row) {
-                return Ok(value);
-            }
-            if let ResultPhase::Failed(message) = result.snapshot().phase {
-                return Err(disk::error(message));
-            }
-            if Instant::now() > deadline {
-                return Err(disk::error(format!("Timed out reading row {row}")));
-            }
-            thread::sleep(Duration::from_millis(5));
-        }
-    }
-
-    /// Evicted first/middle/last rows recover with intact nested types within the memory cap.
-    #[test]
-    fn bounded_cache_round_trip() -> Result<(), QueryError> {
-        let memory = 128 * 1024;
-        let result = QueryResult::start(
-            Arc::new(MockBackend),
-            Query::default(),
-            Cancellation::default(),
-            ResultLimits {
-                memory_bytes: memory,
-                ..ResultLimits::default()
-            },
-        )?;
-        let snapshot = finished(&result)?;
-        assert_eq!(snapshot.phase, ResultPhase::Complete);
-        assert_eq!(snapshot.rows, 50000);
-        assert!(snapshot.disk_bytes > memory as u64);
-        for index in [0, 49999, 25000, 0] {
-            let (batch, local) = row(&result, index)?;
-            let ids = batch
-                .column(0)
-                .as_any()
-                .downcast_ref::<Int64Array>()
-                .ok_or_else(|| disk::error("Missing IDs"))?;
-            assert_eq!(ids.value(local), index as i64 + 10001);
-            assert!(matches!(
-                batch.schema().field(5).data_type(),
-                arrow_schema::DataType::List(_)
-            ));
-            assert!(result.snapshot().memory_bytes <= memory);
-        }
-        assert!(result.row(50000).is_none());
-        Ok(())
-    }
-
-    /// Disk, index and memory exhaustion remain explicit failures, never successful truncation.
-    #[test]
-    fn budgets_fail_explicitly() -> Result<(), QueryError> {
-        for limits in [
-            ResultLimits {
-                disk_bytes: 100,
-                ..ResultLimits::default()
-            },
-            ResultLimits {
-                batches: 1,
-                ..ResultLimits::default()
-            },
-            ResultLimits {
-                memory_bytes: 1,
-                ..ResultLimits::default()
-            },
-        ] {
-            let result = QueryResult::start(
-                Arc::new(MockBackend),
-                Query::default(),
-                Cancellation::default(),
-                limits,
-            )?;
-            let snapshot = finished(&result)?;
-            assert!(matches!(snapshot.phase, ResultPhase::Failed(_)));
-            assert!(snapshot.memory_bytes <= limits.memory_bytes);
-            assert!(snapshot.disk_bytes <= limits.disk_bytes);
-        }
-        Ok(())
-    }
-
-    /// Cancellation keeps a partial status and cached data; dropping the handle releases its file.
-    #[test]
-    fn cancellation_and_cleanup() -> Result<(), QueryError> {
-        let result = QueryResult::start(
-            Arc::new(MockBackend),
-            Query::default(),
-            Cancellation::default(),
-            ResultLimits::default(),
-        )?;
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while result.snapshot().rows == 0 {
-            if Instant::now() > deadline {
-                return Err(disk::error("No first batch"));
-            }
-            thread::sleep(Duration::from_millis(1));
-        }
-        let path = result
-            .shared
-            .state()
-            .disk
-            .as_ref()
-            .map(|disk| disk.path())
-            .ok_or_else(|| disk::error("Missing file"))?;
-        result.cancel();
-        assert!(matches!(
-            result.snapshot().phase,
-            ResultPhase::Cancelled | ResultPhase::Complete
-        ));
-        let _ = row(&result, 0)?;
-        drop(result);
-        while path.exists() {
-            if Instant::now() > deadline {
-                return Err(disk::error("Temporary result file leaked"));
-            }
-            thread::sleep(Duration::from_millis(5));
-        }
-        Ok(())
     }
 }

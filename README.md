@@ -37,17 +37,20 @@ pagination; sorting ties use source order. Deep offsets can require rescanning,
 and files must remain unchanged for consistent navigation.
 
 SQL executes the submitted query without an added row limit; only its own
-LIMIT/OFFSET govern the result. Background workers continuously write typed Arrow
-batches to a private temporary IPC file and publish available rows incrementally.
-Scrolling reads generated rows through a bounded memory cache; it does not trigger
-query pagination. Missing batches load asynchronously with a temporary placeholder.
+LIMIT/OFFSET govern the result. Background workers continuously pull typed Arrow
+batches and publish retained rows incrementally. Small results stay in memory and
+create no result file. All tabs share a `ResultStore`: pressure first evicts
+reloadable batches, then incrementally spills least-recently-used results into
+private IPC files. Scrolling reads generated rows, without triggering query
+pagination; cache misses are loaded asynchronously.
 
-Each SQL result has a 64 MiB Arrow cache, a 2 GiB temporary-file budget and a
-65,536-batch index budget. Exceeding a budget is an explicit failure, never successful
-truncation. Cancelled or failed queries retain committed rows marked **Partial result**.
-Transport, decoding, inspector references and engine allocations are additional to
-the cache budget. Releasing a result cancels its workers and removes its temporary
-file after they exit.
+Each result has a 65,536-batch index ceiling. Shared byte budgets fail explicitly,
+never by successful truncation. Cancelled or failed queries retain committed rows
+marked **Partial result**. Transport, decoding, inspector references, Browse pages
+and engine allocations are additional to the retained-buffer budget. Releasing a
+result cancels its workers; file bytes, including partial writes, remain charged
+until background deletion succeeds. Failed cleanup retains its charge for the
+store lifetime.
 
 SQL result files and DuckDB spill directories live under the per-user cache
 directory, in `rowglide/temporary-v1`. Each resource holds an OS file lock for its
@@ -101,7 +104,7 @@ on app or GUI crates. App injects a concrete backend through
 - `backend.rs`: backend/cursor interfaces, cancellation and shared errors.
 - `pagination.rs`: validated Browse ranges and bounded page collection.
 - `session.rs`: cancellable, capacity-one query events and background cursor cleanup.
-- `result/`: continuous Arrow IPC storage, bounded memory cache and asynchronous rereads.
+- `result/`: shared memory-first result storage, incremental IPC spill and asynchronous rereads.
 - `temporary.rs`: leased scratch directories, background deletion and crash recovery.
 - `duckdb/`: private file registry, SQL construction and Arrow worker transport.
 - `mock.rs`: deterministic fixture backend and its behavior tests.
