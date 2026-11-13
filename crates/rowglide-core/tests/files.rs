@@ -1,7 +1,8 @@
 use arrow_array::{Array, Int64Array};
 use duckdb::Connection;
-use rowglide_core::{Backend, Cancellation, DuckDbBackend, Preview, Query, Sort};
+use rowglide_core::{Backend, Cancellation, DuckDbBackend, Preview, Query, QueryError, Sort};
 use std::{
+    error::Error,
     fs,
     sync::Arc,
     thread,
@@ -13,7 +14,7 @@ use std::{
 /// Also checks aggregate SQL, rejection of write/multiple statements and a filter
 /// containing SQL-like text that must remain a literal value.
 #[test]
-fn csv_filters_sorting_sql_and_quoted_paths() -> Result<(), Box<dyn std::error::Error>> {
+fn csv_filters_sorting_sql_and_quoted_paths() -> Result<(), Box<dyn Error>> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("people's data.csv");
     fs::write(&path, "id,city,amount\n1,London,3\n2,Tokyo,\n3,London,1\n")?;
@@ -101,8 +102,7 @@ fn csv_filters_sorting_sql_and_quoted_paths() -> Result<(), Box<dyn std::error::
 /// Asserts the retained row ceiling and truncation flag; printed elapsed time is
 /// an informal debug observation rather than a performance acceptance threshold.
 #[test]
-fn parquet_nested_preview_is_bounded_and_globally_sorted() -> Result<(), Box<dyn std::error::Error>>
-{
+fn parquet_nested_preview_is_bounded_and_globally_sorted() -> Result<(), Box<dyn Error>> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("nested.parquet");
     let conn = Connection::open_in_memory()?;
@@ -151,7 +151,7 @@ fn parquet_nested_preview_is_bounded_and_globally_sorted() -> Result<(), Box<dyn
 /// A successful query afterward proves that worker cleanup released the shared
 /// engine gate instead of leaving later requests blocked.
 #[test]
-fn cancellation_interrupts_engine_and_releases_worker() -> Result<(), Box<dyn std::error::Error>> {
+fn cancellation_interrupts_engine_and_releases_worker() -> Result<(), Box<dyn Error>> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("small.csv");
     fs::write(&path, "id\n1\n")?;
@@ -176,7 +176,7 @@ fn cancellation_interrupts_engine_and_releases_worker() -> Result<(), Box<dyn st
     let started = Instant::now();
     cancel.cancel();
     let result = worker.join().map_err(|_| "Query worker panicked")?;
-    assert!(result.is_err());
+    assert!(matches!(result, Err(QueryError::Cancelled)));
     assert!(started.elapsed() < Duration::from_secs(5));
     let cancel = Cancellation::default();
     assert_eq!(
@@ -191,20 +191,62 @@ fn cancellation_interrupts_engine_and_releases_worker() -> Result<(), Box<dyn st
 /// Also verifies null placement after an explicit offset and schema retention for
 /// an empty SQL result.
 #[test]
-fn corrupt_files_empty_results_and_quoted_columns() -> Result<(), Box<dyn std::error::Error>> {
+fn corrupt_files_empty_results_and_quoted_columns() -> Result<(), Box<dyn Error>> {
     let temp = tempfile::tempdir()?;
     let backend = DuckDbBackend::default();
-    assert!(
-        backend
-            .open(&temp.path().join("missing.csv"), Cancellation::default())
-            .is_err()
+    let missing = backend
+        .open(&temp.path().join("missing.csv"), Cancellation::default())
+        .err()
+        .ok_or("Missing file unexpectedly opened")?;
+    assert!(matches!(missing, QueryError::Io(_)));
+    assert_eq!(
+        missing
+            .source()
+            .and_then(|source| source.downcast_ref::<std::io::Error>())
+            .ok_or("Missing I/O error source")?
+            .kind(),
+        std::io::ErrorKind::NotFound
     );
     let bad = temp.path().join("bad.parquet");
     fs::write(&bad, "not parquet")?;
-    assert!(backend.open(&bad, Cancellation::default()).is_err());
+    let corrupt = backend
+        .open(&bad, Cancellation::default())
+        .err()
+        .ok_or("Corrupt Parquet unexpectedly opened")?;
+    assert!(matches!(corrupt, QueryError::DuckDb(_)));
+    assert!(
+        corrupt
+            .source()
+            .is_some_and(|source| source.is::<duckdb::Error>())
+    );
     let path = temp.path().join("quotes.csv");
     fs::write(&path, "\"a\"\"b\",id\nLondon,1\nTokyo,2\n,3\n")?;
     let source = backend.open(&path, Cancellation::default())?;
+    // Both parser failures and engine failures retain their causes across the worker channel.
+    for (sql, parser_failure) in [
+        ("SELECT (", true),
+        ("SELECT missing_column FROM current_file", false),
+    ] {
+        let error = backend
+            .query(
+                Query {
+                    source: source.id,
+                    sql: Some(sql.into()),
+                    ..Query::default()
+                },
+                Cancellation::default(),
+            )
+            .err()
+            .ok_or("Invalid query unexpectedly succeeded")?;
+        let cause = error.source().ok_or("Query failure lost its source")?;
+        if parser_failure {
+            assert!(matches!(error, QueryError::Sql(_)));
+            assert!(cause.is::<sqlparser::parser::ParserError>());
+        } else {
+            assert!(matches!(error, QueryError::DuckDb(_)));
+            assert!(cause.is::<duckdb::Error>());
+        }
+    }
     let cancel = Cancellation::default();
     let preview = Preview::collect(
         backend.query(

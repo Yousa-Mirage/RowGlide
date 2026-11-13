@@ -29,7 +29,9 @@ impl Disk {
 
     /// Create a private temporary file and return its writer plus shared lifetime handle.
     pub(super) fn create() -> Result<(Arc<Self>, File), QueryError> {
-        let (file, path) = tempfile::NamedTempFile::new().map_err(error)?.into_parts();
+        let (file, path) = tempfile::NamedTempFile::new()
+            .map_err(QueryError::CacheIo)?
+            .into_parts();
         Ok((Arc::new(Self { path: Some(path) }), file))
     }
 
@@ -40,8 +42,9 @@ impl Disk {
             .path
             .as_ref()
             .ok_or_else(|| error("Result cache was released"))?;
-        let mut file = File::open(path).map_err(error)?;
-        file.seek(SeekFrom::Start(offset)).map_err(error)?;
+        let mut file = File::open(path).map_err(QueryError::CacheIo)?;
+        file.seek(SeekFrom::Start(offset))
+            .map_err(QueryError::CacheIo)?;
         let mut reader = StreamReader::try_new(BufReader::new(file.take(length)), None)?;
         reader
             .next()
@@ -95,17 +98,45 @@ pub(super) fn append(
     batch: &RecordBatch,
     remaining: u64,
 ) -> Result<u64, QueryError> {
-    let start = file.stream_position().map_err(error)?;
+    let start = file.stream_position().map_err(QueryError::CacheIo)?;
     let limited = LimitedWriter { file, remaining };
     let mut writer = StreamWriter::try_new(limited, batch.schema().as_ref())?;
     writer.write(batch)?;
     writer.finish()?;
     drop(writer);
-    file.flush().map_err(error)?;
-    Ok(file.stream_position().map_err(error)? - start)
+    file.flush().map_err(QueryError::CacheIo)?;
+    Ok(file.stream_position().map_err(QueryError::CacheIo)? - start)
 }
 
-/// Add result-cache context to filesystem and serialization failures.
+/// Add result-cache context to application-generated budget and protocol messages.
+/// Filesystem failures use `QueryError::CacheIo` to retain their original cause.
 pub(super) fn error(value: impl std::fmt::Display) -> QueryError {
     QueryError::Backend(format!("Result cache: {value}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Disk;
+    use crate::QueryError;
+    use std::{error::Error, io};
+
+    /// Missing cache files retain an inspectable I/O cause and a user-facing cache label.
+    #[test]
+    fn missing_cache_file_preserves_io_source() -> Result<(), Box<dyn Error>> {
+        let (disk, writer) = Disk::create()?;
+        drop(writer);
+        std::fs::remove_file(disk.path())?;
+        let error = disk.read(0, 1).err().ok_or("Missing file was readable")?;
+        assert!(matches!(error, QueryError::CacheIo(_)));
+        assert!(error.to_string().starts_with("Result cache:"));
+        assert_eq!(
+            error
+                .source()
+                .and_then(|source| source.downcast_ref::<io::Error>())
+                .ok_or("Cache error lost its I/O source")?
+                .kind(),
+            io::ErrorKind::NotFound
+        );
+        Ok(())
+    }
 }

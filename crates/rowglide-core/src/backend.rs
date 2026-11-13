@@ -43,42 +43,36 @@ impl Cancellation {
 
 /// Failure shared by backend operations, batch collection and the UI.
 ///
-/// Cancellation is distinct from invalid requests and data/engine failures so
-/// callers can preserve their meaning while displaying a readable message.
-#[derive(Debug)]
+/// Cancellation is distinct from invalid requests and data/engine failures.
+/// Typed external failures retain their original cause through `Error::source`;
+/// only application-generated messages and non-ownable synchronization errors use text.
+#[derive(Debug, thiserror::Error)]
 pub enum QueryError {
     /// The request's cancellation token was observed by background work.
+    #[error("Query cancelled")]
     Cancelled,
     /// Invalid input, unsupported operation or an explicit collection-budget failure.
+    #[error("{0}")]
     Invalid(String),
-    /// Arrow array/schema construction failed; retains the original Arrow error.
-    Data(arrow_schema::ArrowError),
-    /// Engine, filesystem, synchronization or worker failure represented as text.
+    /// Arrow construction, conversion or IPC processing failed; retains its cause.
+    #[error("Arrow data error: {0}")]
+    Data(#[from] arrow_schema::ArrowError),
+    /// File access, temporary-directory creation or worker-thread startup failed.
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    /// DuckDB configuration, preparation or execution failed.
+    #[error("DuckDB: {0}")]
+    DuckDb(#[from] duckdb::Error),
+    /// User SQL could not be parsed before engine execution.
+    #[error("Invalid SQL: {0}")]
+    Sql(#[from] sqlparser::parser::ParserError),
+    /// Temporary result storage failed; retains the I/O error and cache context.
+    #[error("Result cache: {0}")]
+    CacheIo(#[source] std::io::Error),
+    /// Application-generated backend, resource-budget or synchronization failure.
+    /// External errors with an owned typed cause should use a source-bearing variant.
+    #[error("{0}")]
     Backend(String),
-}
-
-impl std::fmt::Display for QueryError {
-    /// Format a user-facing message without adding engine implementation details.
-    ///
-    /// Invalid-request and backend messages are preserved; cancellation and Arrow
-    /// construction failures receive their corresponding contextual text.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Cancelled => write!(f, "Query cancelled"),
-            Self::Invalid(message) => f.write_str(message),
-            Self::Backend(message) => f.write_str(message),
-            Self::Data(error) => write!(f, "Cannot build data batch: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for QueryError {}
-
-impl From<arrow_schema::ArrowError> for QueryError {
-    /// Preserve an Arrow error as a typed data failure when propagating it with `?`.
-    fn from(value: arrow_schema::ArrowError) -> Self {
-        Self::Data(value)
-    }
 }
 
 /// Owned, blocking stream of typed result batches with an independently available schema.

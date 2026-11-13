@@ -50,8 +50,7 @@ impl QuerySession {
                     Err(error) => SessionEvent::Failed(error),
                 };
                 let _ = deliver(&sender, terminal, None);
-            })
-            .map_err(|error| QueryError::Backend(error.to_string()))?;
+            })?;
         Ok(Self { cancel, events })
     }
 

@@ -206,8 +206,7 @@ impl QueryResult {
         let reader = shared.clone();
         thread::Builder::new()
             .name("result-reader".into())
-            .spawn(move || read_worker(reader, receiver))
-            .map_err(disk::error)?;
+            .spawn(move || read_worker(reader, receiver))?;
         thread::Builder::new()
             .name("result-writer".into())
             .spawn(move || {
@@ -218,8 +217,7 @@ impl QueryResult {
                     Err(error) => ResultPhase::Failed(error.to_string()),
                 };
                 shared.finish(phase);
-            })
-            .map_err(disk::error)?;
+            })?;
         Ok(result)
     }
 
@@ -514,8 +512,7 @@ mod tests {
         std::fs::OpenOptions::new()
             .write(true)
             .open(path)
-            .and_then(|file| file.set_len(0))
-            .map_err(disk::error)?;
+            .and_then(|file| file.set_len(0))?;
         assert!(row(&result, 49999).is_err());
         assert!(matches!(result.snapshot().phase, ResultPhase::Failed(_)));
         assert!(result.row(0).is_some());

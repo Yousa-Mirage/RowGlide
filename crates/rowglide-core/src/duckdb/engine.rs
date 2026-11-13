@@ -38,10 +38,8 @@ pub struct DuckDbBackend {
     gate: Arc<Mutex<()>>,
 }
 
-/// Convert an engine, I/O or thread error into a displayable backend failure.
-///
-/// This preserves its message as text; it does not retain the original error type
-/// or an error-source chain.
+/// Format an application message or non-ownable synchronization failure.
+/// Owned engine, Arrow and I/O errors propagate through typed QueryError conversions.
 pub(super) fn error(error: impl std::fmt::Display) -> QueryError {
     QueryError::Backend(error.to_string())
 }
@@ -55,21 +53,14 @@ pub(super) fn error(error: impl std::fmt::Display) -> QueryError {
 pub(super) fn connection(temp: &Path) -> Result<Connection, QueryError> {
     let threads = thread::available_parallelism().map_or(2, |n| n.get().min(4));
     let config = Config::default()
-        .max_memory("512MB")
-        .map_err(error)?
-        .threads(threads as i64)
-        .map_err(error)?
-        .enable_autoload_extension(false)
-        .map_err(error)?
-        .with("autoinstall_known_extensions", "false")
-        .map_err(error)?
-        .with("temp_directory", temp.to_string_lossy())
-        .map_err(error)?
-        .with("max_temp_directory_size", "2GB")
-        .map_err(error)?
-        .with("preserve_insertion_order", "true")
-        .map_err(error)?;
-    Connection::open_in_memory_with_flags(config).map_err(error)
+        .max_memory("512MB")?
+        .threads(threads as i64)?
+        .enable_autoload_extension(false)?
+        .with("autoinstall_known_extensions", "false")?
+        .with("temp_directory", temp.to_string_lossy())?
+        .with("max_temp_directory_size", "2GB")?
+        .with("preserve_insertion_order", "true")?;
+    Ok(Connection::open_in_memory_with_flags(config)?)
 }
 
 /// Expose a local file as the connection-local `current_file` view.
@@ -81,14 +72,13 @@ pub(super) fn register(conn: &Connection, path: &Path, format: &str) -> Result<(
     let path = path
         .to_str()
         .ok_or_else(|| QueryError::Invalid("File path must be valid UTF-8".into()))?;
-    conn.execute("SET VARIABLE source_path = ?", [path])
-        .map_err(error)?;
+    conn.execute("SET VARIABLE source_path = ?", [path])?;
     let sql = if format == "PARQUET" {
         "CREATE VIEW current_file AS SELECT * FROM read_parquet(getvariable('source_path'))"
     } else {
         "CREATE VIEW current_file AS SELECT * FROM read_csv(getvariable('source_path'), sample_size=20480)"
     };
-    conn.execute_batch(sql).map_err(error)
+    Ok(conn.execute_batch(sql)?)
 }
 
 /// Wait for exclusive engine access while checking cancellation between attempts.
@@ -131,7 +121,7 @@ impl Backend for DuckDbBackend {
     /// inspection failures. The returned source has an unknown row count.
     fn open(&self, path: &Path, cancel: Cancellation) -> Result<Source, QueryError> {
         cancel.check()?;
-        let path = path.canonicalize().map_err(error)?;
+        let path = path.canonicalize()?;
         if !path.is_file() {
             return Err(error("Select a regular CSV or Parquet file"));
         }
@@ -155,14 +145,12 @@ impl Backend for DuckDbBackend {
             return Ok(file.info.clone());
         }
         let _guard = lock_engine(&self.gate, &cancel)?;
-        let temp = tempfile::tempdir().map_err(error)?;
+        let temp = tempfile::tempdir()?;
         let conn = connection(temp.path())?;
         let _interrupt = stream::Interrupt::new(&conn, cancel.clone())?;
         register(&conn, &path, format)?;
-        let mut statement = conn
-            .prepare("SELECT * FROM current_file LIMIT 0")
-            .map_err(error)?;
-        let schema = statement.stream_arrow([]).map_err(error)?.get_schema();
+        let mut statement = conn.prepare("SELECT * FROM current_file LIMIT 0")?;
+        let schema = statement.stream_arrow([])?.get_schema();
         cancel.check()?;
         let mut files = self.files.lock().map_err(error)?;
         if let Some(file) = files.iter().find(|file| file.path == path) {

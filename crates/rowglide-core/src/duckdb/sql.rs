@@ -25,8 +25,7 @@ pub(super) fn identifier(name: &str) -> String {
 /// sandbox for untrusted SQL; DuckDB remains the execution authority.
 pub(super) fn build(query: &Query, schema: &Schema) -> Result<(String, Vec<Value>), QueryError> {
     if let Some(sql) = &query.sql {
-        let statements = Parser::parse_sql(&DuckDbDialect {}, sql)
-            .map_err(|error| QueryError::Invalid(error.to_string()))?;
+        let statements = Parser::parse_sql(&DuckDbDialect {}, sql)?;
         let [Statement::Query(select)] = statements.as_slice() else {
             return Err(QueryError::Invalid("Enter one SELECT or WITH query".into()));
         };

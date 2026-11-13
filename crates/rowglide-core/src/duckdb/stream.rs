@@ -48,8 +48,7 @@ impl Interrupt {
                     }
                     thread::sleep(Duration::from_millis(10));
                 }
-            })
-            .map_err(engine::error)?;
+            })?;
         Ok(Self {
             stop,
             worker: Some(worker),
@@ -201,8 +200,7 @@ pub(super) fn start(
                 };
                 let _ = sender.send(Message::Error(error));
             }
-        })
-        .map_err(engine::error)?;
+        })?;
     let mut cursor = Cursor {
         schema: Arc::new(arrow_schema::Schema::empty()),
         receiver: Some(receiver),
@@ -235,22 +233,20 @@ fn produce(
     sender: &SyncSender<Message>,
 ) -> Result<(), QueryError> {
     let _guard = engine::lock_engine(&gate, &cancel)?;
-    let temp = tempfile::tempdir().map_err(engine::error)?;
+    let temp = tempfile::tempdir()?;
     let conn = engine::connection(temp.path())?;
     let _interrupt = Interrupt::new(&conn, cancel.clone())?;
     engine::register(&conn, &file.path, file.info.format)?;
     let (sql, params) = sql::build(&query, &file.schema)?;
     cancel.check()?;
-    let mut statement = conn.prepare(&sql).map_err(engine::error)?;
-    let batches = statement
-        .stream_arrow(params_from_iter(params.iter()))
-        .map_err(engine::error)?;
+    let mut statement = conn.prepare(&sql)?;
+    let batches = statement.stream_arrow(params_from_iter(params.iter()))?;
     sender
         .send(Message::Schema(batches.get_schema()))
         .map_err(engine::error)?;
     for batch in batches {
         cancel.check()?;
-        let batch = batch.map_err(engine::error)?;
+        let batch = batch?;
         // Avoid retaining a single pathological batch beyond the preview budget.
         if batch.get_array_memory_size() > 16 * 1024 * 1024 {
             return Err(engine::error(
