@@ -1,9 +1,9 @@
 //! Browse input validation and background query lifecycle.
 
-use super::state::{BrowseDraft, RequestKey};
+use super::state::{BrowseDraft, PageSummary, RequestKey};
 use super::{TabMode, Workspace};
 use gpui_kit::*;
-use rowglide_app::{Cancellation, Preview};
+use rowglide_app::{BrowsePage, Cancellation, Preview};
 use std::time::Instant;
 
 impl Workspace {
@@ -15,38 +15,73 @@ impl Workspace {
         }
     }
 
+    pub(super) fn browse_draft(&self, cx: &App) -> BrowseDraft {
+        BrowseDraft {
+            search: self.search.read(cx).value().to_string(),
+            limit: self.limit.read(cx).value().to_string(),
+            offset: self.offset.read(cx).value().to_string(),
+        }
+    }
+
     // Validate browse controls before replacing the active query.
     pub(super) fn apply_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.active_tab().mode != TabMode::Browse {
             return;
         }
-        let limit = self.limit.read(cx).value();
-        let offset = self.offset.read(cx).value();
-        let parse = |value: &str| value.trim().parse::<usize>();
-        let limit = if limit.trim().is_empty() {
-            Ok(None)
-        } else {
-            parse(&limit).map(Some)
-        };
-        let offset = if offset.trim().is_empty() {
-            Ok(0)
-        } else {
-            parse(&offset)
-        };
-
-        match (limit, offset) {
-            (Ok(limit), Ok(offset)) => {
-                self.query.limit = limit;
-                self.query.offset = offset;
-                self.query.search = self.search.read(cx).value().to_string();
+        let draft = self.browse_draft(cx);
+        match draft.page() {
+            Ok(page) => {
+                self.query.limit = Some(page.limit());
+                self.query.offset = page.offset();
+                self.query.search = draft.search.clone();
                 self.query.sql = None;
                 self.active_tab_mut().browse = self.query.clone();
+                self.active_tab_mut().drafts = BrowseDraft {
+                    limit: page.limit().to_string(),
+                    offset: page.offset().to_string(),
+                    ..draft
+                };
+                self.sync_controls_from_tab(window, cx);
                 self.run(window, cx);
             }
-            _ => {
+            Err(error) => {
                 self.error = true;
-                self.status =
-                    "Limit and Offset must be non-negative whole numbers within range".into();
+                self.status = error.to_string();
+                cx.notify();
+            }
+        }
+    }
+
+    pub(super) fn can_turn_page(&self, next: bool, cx: &App) -> bool {
+        self.active_tab()
+            .can_turn_page(next, self.busy, &self.browse_draft(cx))
+    }
+
+    // Navigate the applied query; edited controls require Apply first.
+    pub(super) fn turn_page(&mut self, next: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.can_turn_page(next, cx) {
+            return;
+        }
+        let range = self.browse_draft(cx).page().and_then(|page| {
+            if next {
+                page.next_page()
+            } else {
+                Ok(page.previous())
+            }
+        });
+        match range {
+            Ok(page) => {
+                self.query.offset = page.offset();
+                self.active_tab_mut().browse = self.query.clone();
+                self.active_tab_mut().drafts.offset = page.offset().to_string();
+                self.offset.update(cx, |state, cx| {
+                    state.set_value(page.offset().to_string(), window, cx)
+                });
+                self.run(window, cx);
+            }
+            Err(error) => {
+                self.error = true;
+                self.status = error.to_string();
                 cx.notify();
             }
         }
@@ -55,13 +90,14 @@ impl Workspace {
     pub(super) fn reset_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search
             .update(cx, |state, cx| state.set_value("", window, cx));
-        self.limit
-            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.limit.update(cx, |state, cx| {
+            state.set_value(BrowsePage::default().limit().to_string(), window, cx)
+        });
         self.offset
             .update(cx, |state, cx| state.set_value("0", window, cx));
     }
 
-    // Replace the active task and collect a bounded preview off the UI thread.
+    // Replace the active task; complete browse pages are collected off the UI thread.
     pub(super) fn run(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.cancellation.cancel();
         self.cancellation = Cancellation::default();
@@ -69,12 +105,15 @@ impl Workspace {
         let request = self.request_key();
 
         self.active_tab_mut().result_mut().initialized = true;
+        self.active_tab_mut().result_mut().page = None;
         self.busy = true;
         self.error = false;
         self.status = "Loading data…".into();
         self.selected = None;
+        self.expanded.clear();
 
         self.table.update(cx, |table, cx| {
+            table.clear_selection(cx);
             table.delegate_mut().loading = true;
             table.delegate_mut().preview = None;
             table.refresh(cx);
@@ -86,9 +125,27 @@ impl Workspace {
         let cancel = self.cancellation.clone();
         let work = cx.background_executor().spawn(async move {
             let started = Instant::now();
-            let result = backend
-                .query(query, cancel.clone())
-                .and_then(|cursor| Preview::collect(cursor, &cancel));
+            let result = if query.sql.is_some() {
+                backend
+                    .query(query, cancel.clone())
+                    .and_then(|cursor| Preview::collect(cursor, &cancel))
+                    .map(|preview| (preview, None))
+            } else {
+                BrowsePage::new(
+                    query.limit.unwrap_or(BrowsePage::default().limit()),
+                    query.offset,
+                )
+                .and_then(|range| {
+                    range.load(backend.as_ref(), query, &cancel).map(|result| {
+                        let page = PageSummary {
+                            range,
+                            rows: result.preview.rows,
+                            has_next: result.has_next,
+                        };
+                        (result.preview, Some(page))
+                    })
+                })
+            };
             (result, started.elapsed())
         });
 
@@ -102,23 +159,36 @@ impl Workspace {
 
                 this.busy = false;
                 match result {
-                    Ok(preview) => {
-                        this.status = format!(
-                            "{} loaded rows{} · {:.0} ms",
-                            preview.rows,
-                            if preview.truncated {
-                                " · bounded preview"
-                            } else {
-                                ""
-                            },
-                            elapsed.as_secs_f64() * 1000.
-                        );
+                    Ok((preview, page)) => {
+                        this.active_tab_mut().result_mut().page = page;
+                        this.status = if let Some(page) = page {
+                            format!("{} · {:.0} ms", page.label(), elapsed.as_secs_f64() * 1000.)
+                        } else {
+                            format!(
+                                "{} loaded rows{} · {:.0} ms",
+                                preview.rows,
+                                if preview.truncated {
+                                    " · bounded preview"
+                                } else {
+                                    ""
+                                },
+                                elapsed.as_secs_f64() * 1000.
+                            )
+                        };
                         this.table.update(cx, |table, cx| {
                             let grid = table.delegate_mut();
                             grid.preview = Some(preview);
                             grid.loading = false;
                             grid.sort = this.query.sort;
                             table.refresh(cx);
+                            if table
+                                .delegate()
+                                .preview
+                                .as_ref()
+                                .is_some_and(|p| p.rows > 0)
+                            {
+                                table.scroll_to_row(0, cx);
+                            }
                         });
                     }
                     Err(error) => {
@@ -157,11 +227,7 @@ impl Workspace {
         if self.busy {
             self.cancel(cx);
         }
-        let drafts = BrowseDraft {
-            search: self.search.read(cx).value().to_string(),
-            limit: self.limit.read(cx).value().to_string(),
-            offset: self.offset.read(cx).value().to_string(),
-        };
+        let drafts = self.browse_draft(cx);
         let sql = self.sql.read(cx).value().to_string();
         let preview = self
             .table

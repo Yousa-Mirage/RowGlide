@@ -20,12 +20,23 @@ in folder tabs with independent Browse and SQL sessions. Browse supports text
 search across string columns, scalar sorting, Limit and Offset. SQL supports a
 single SELECT/WITH query against `current_file`, including aggregates and joins.
 
-DuckDB scans files directly and streams typed Arrow batches through a one-batch
-channel. Preview retention is capped at 8,192 rows / 16 MiB, with an 8,193-row
-query limit to detect truncation. Sorting and filtering precede this limit; total
-row counts remain unknown instead of requiring a full COUNT scan. The GUI shows
-the bounded preview once collected; incremental display and unlimited scrolling
-are not implemented yet.
+Browse uses explicit pages: **Limit** is the page size (default 1,000) and
+**Offset** is the zero-based start. **Previous / Next** replace the page and
+reset vertical scrolling. Apply edited controls before navigating; clearing
+Limit restores the default. Sorting starts at Offset 0. Pages belong to their
+file tabs and remain separate from SQL results.
+
+DuckDB streams typed Arrow batches through a one-batch channel. Browse requests
+one extra row to detect the next page without a COUNT scan. There is no hidden
+row-count ceiling: a 10,000-row Limit returns up to 10,000 matching rows. A page
+that exceeds the 16 MiB retained-buffer budget fails explicitly and asks for a
+smaller Limit. The GUI presents each completed page. Sorting/filtering precede
+pagination; sorting ties use source order. Deep offsets can require rescanning,
+and files must remain unchanged for consistent navigation.
+
+SQL currently retains the bounded preview (8,192 rows / 16 MiB, with an outer
+8,193-row query cap). Complete SQL result streaming and bounded disk caching are
+planned separately; incremental GUI presentation is not yet implemented.
 
 Each query uses a temporary in-memory connection, at most four execution threads,
 a 512 MB DuckDB memory limit, and a private temporary spill directory capped at
@@ -69,7 +80,7 @@ Workspace owns shared GUI controls and the active task. Each `TabState` retains
 browse inputs, SQL drafts, mode, results and inspector state. Switching a tab or
 mode cancels pending work and restores its session. SQL mode disables browse
 filters and column sorting. Up to three inactive previews are retained alongside
-the active preview, each bounded to 8,192 rows / 16 MiB. Eviction keeps inputs;
+the active result, each bounded to 16 MiB. Eviction keeps inputs;
 use **Reload result** to rerun the last applied query. Scroll positions, column
 widths and editor undo history are not yet saved per tab.
 Table rendering and cell helpers remain independent of workspace coordination.

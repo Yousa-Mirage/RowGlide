@@ -16,7 +16,7 @@ use gpui_kit::component::{
     table::{DataTable, TableEvent, TableState},
 };
 use gpui_kit::*;
-use rowglide_app::{Backend, Cancellation, Query};
+use rowglide_app::{Backend, BrowsePage, Cancellation, Query};
 use std::{collections::HashSet, sync::Arc};
 
 /// Owns view state and coordinates background queries.
@@ -74,13 +74,15 @@ impl Workspace {
         });
 
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Filter text columns…"));
-        let limit = cx.new(|cx| InputState::new(window, cx).placeholder("All"));
+        let limit = cx.new(|cx| {
+            InputState::new(window, cx).default_value(BrowsePage::default().limit().to_string())
+        });
         let offset = cx.new(|cx| InputState::new(window, cx).default_value("0"));
         let sql = cx.new(|cx| {
             EditorState::new(window, cx).default_value("SELECT * FROM current_file LIMIT 100;")
         });
 
-        let subscriptions = vec![
+        let mut subscriptions = vec![
             cx.subscribe_in(
                 &events,
                 window,
@@ -89,6 +91,10 @@ impl Workspace {
                         return;
                     }
                     this.active_tab_mut().browse.sort = event.0;
+                    this.active_tab_mut().browse.offset = 0;
+                    this.active_tab_mut().drafts.offset = "0".into();
+                    this.offset
+                        .update(cx, |state, cx| state.set_value("0", window, cx));
                     this.query = this.active_tab().active_query();
 
                     this.run(window, cx);
@@ -111,6 +117,12 @@ impl Workspace {
                 }
             }),
         ];
+        // Recompute navigation availability when browse drafts change.
+        subscriptions.extend([
+            cx.observe(&search, |_, _, cx| cx.notify()),
+            cx.observe(&limit, |_, _, cx| cx.notify()),
+            cx.observe(&offset, |_, _, cx| cx.notify()),
+        ]);
 
         let mut this = Self {
             tabs: backend.sources().into_iter().map(TabState::new).collect(),
@@ -137,6 +149,7 @@ impl Workspace {
 
         if !this.tabs.is_empty() {
             this.query = this.active_tab().active_query();
+            this.sync_controls_from_tab(window, cx);
             this.run(window, cx);
         }
         this

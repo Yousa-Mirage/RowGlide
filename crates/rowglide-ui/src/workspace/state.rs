@@ -1,7 +1,7 @@
 //! Per-file browse and SQL sessions with bounded result retention.
 
 use arrow_array::ArrayRef;
-use rowglide_app::{Preview, Query, Source};
+use rowglide_app::{BrowsePage, Preview, Query, QueryError, Source};
 use std::collections::HashSet;
 
 /// The result mode controls which query state and result are active for a tab.
@@ -30,8 +30,61 @@ impl Default for BrowseDraft {
     fn default() -> Self {
         Self {
             search: String::new(),
-            limit: String::new(),
+            limit: BrowsePage::default().limit().to_string(),
             offset: "0".into(),
+        }
+    }
+}
+
+impl BrowseDraft {
+    pub(super) fn page(&self) -> Result<BrowsePage, QueryError> {
+        let parse = |text: &str, default: usize| {
+            if text.trim().is_empty() {
+                Ok(default)
+            } else {
+                text.trim().parse::<usize>().map_err(|_| QueryError::Invalid(
+                    "Limit must be a positive whole number; Offset must be a non-negative whole number".into(),
+                ))
+            }
+        };
+        BrowsePage::new(
+            parse(&self.limit, BrowsePage::default().limit())?,
+            parse(&self.offset, 0)?,
+        )
+    }
+
+    pub(super) fn matches_query(&self, query: &Query) -> bool {
+        self.search == query.search
+            && self.page().is_ok_and(|page| {
+                Some(page.limit()) == query.limit && page.offset() == query.offset
+            })
+    }
+}
+
+/// Navigation describes the completed page, never pending input or SQL results.
+#[derive(Clone, Copy)]
+pub(super) struct PageSummary {
+    pub(super) range: BrowsePage,
+    pub(super) rows: usize,
+    pub(super) has_next: bool,
+}
+
+impl PageSummary {
+    pub(super) fn label(self) -> String {
+        if self.rows == 0 {
+            format!("0 rows · Offset {}", self.range.offset())
+        } else {
+            format!(
+                "Rows {}–{} · {} rows{}",
+                self.range.offset() + 1,
+                self.range.offset() + self.rows,
+                self.rows,
+                if self.has_next {
+                    ""
+                } else {
+                    " · End of results"
+                },
+            )
         }
     }
 }
@@ -56,6 +109,7 @@ impl TabState {
         Self {
             browse: Query {
                 source: source.id,
+                limit: Some(BrowsePage::default().limit()),
                 ..Query::default()
             },
             source,
@@ -75,6 +129,17 @@ impl TabState {
         }
     }
 
+    pub(super) fn can_turn_page(&self, next: bool, busy: bool, draft: &BrowseDraft) -> bool {
+        if self.mode != TabMode::Browse || busy || !draft.matches_query(&self.browse) {
+            return false;
+        }
+        if next {
+            self.browse_result.page.is_some_and(|page| page.has_next)
+        } else {
+            self.browse.offset > 0
+        }
+    }
+
     pub(super) fn active_query(&self) -> Query {
         match self.mode {
             TabMode::Browse => self.browse.clone(),
@@ -90,6 +155,7 @@ impl TabState {
 /// A mode's cached result and inspector state; inputs survive eviction.
 pub(super) struct ResultState {
     pub(super) preview: Option<Preview>,
+    pub(super) page: Option<PageSummary>,
     pub(super) status: String,
     pub(super) error: bool,
     pub(super) selected: Option<(String, ArrayRef, usize)>,
@@ -102,6 +168,7 @@ impl Default for ResultState {
     fn default() -> Self {
         Self {
             preview: None,
+            page: None,
             status: "Ready".into(),
             error: false,
             selected: None,
@@ -139,6 +206,7 @@ pub(super) fn trim_cache(tabs: &mut [TabState]) {
             TabMode::Sql => &mut tab.sql_result,
         };
         result.preview = None;
+        result.page = None;
         result.selected = None;
         result.expanded.clear();
         result.status = "Preview released · run again to reload".into();
@@ -189,6 +257,66 @@ mod tests {
     }
 
     #[test]
+    fn drafts_validate_page_sizes_and_require_apply() -> Result<(), QueryError> {
+        let mut draft = BrowseDraft::default();
+        let query = tab(0).browse;
+        assert!(draft.matches_query(&query));
+        draft.limit.clear();
+        draft.offset.clear();
+        assert_eq!(draft.page()?, BrowsePage::default());
+        for invalid in ["0", "-1", "1.5", "abc", "18446744073709551616"] {
+            draft.limit = invalid.into();
+            assert!(draft.page().is_err());
+            assert!(!draft.matches_query(&query));
+        }
+        draft.limit = " 10000 ".into();
+        draft.offset = " 500 ".into();
+        assert_eq!(draft.page()?, BrowsePage::new(10000, 500)?);
+        assert!(!draft.matches_query(&query));
+        draft.offset = "-1".into();
+        assert!(draft.page().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn navigation_obeys_completed_pages_pending_edits_and_mode() -> Result<(), QueryError> {
+        let mut first = tab(0);
+        let mut draft = BrowseDraft::default();
+        assert!(!first.can_turn_page(false, false, &draft));
+        assert!(!first.can_turn_page(true, false, &draft));
+        first.browse_result.page = Some(PageSummary {
+            range: BrowsePage::default(),
+            rows: 1000,
+            has_next: true,
+        });
+        assert!(first.can_turn_page(true, false, &draft));
+        assert!(!first.can_turn_page(true, true, &draft));
+        draft.search = "pending".into();
+        assert!(!first.can_turn_page(true, false, &draft));
+        draft.search.clear();
+
+        first.browse.offset = 1000;
+        draft.offset = "1000".into();
+        first.browse_result.page = Some(PageSummary {
+            range: BrowsePage::new(1000, 1000)?,
+            rows: 50,
+            has_next: false,
+        });
+        assert!(first.can_turn_page(false, false, &draft));
+        assert!(!first.can_turn_page(true, false, &draft));
+        first.mode = TabMode::Sql;
+        assert!(!first.can_turn_page(false, false, &draft));
+        first.mode = TabMode::Browse;
+        assert!(first.can_turn_page(false, false, &draft));
+        assert_eq!(
+            first.browse_result.page.map(PageSummary::label).as_deref(),
+            Some("Rows 1001–1050 · 50 rows · End of results")
+        );
+        assert!(tab(1).browse_result.page.is_none());
+        Ok(())
+    }
+
+    #[test]
     fn modes_keep_applied_queries_and_drafts_separate() {
         let mut first = tab(4);
         first.browse.search = "London".into();
@@ -229,6 +357,11 @@ mod tests {
         for (index, tab) in tabs.iter_mut().enumerate() {
             tab.sql = format!("draft {index}");
             tab.browse_result.touched = index as u64;
+            tab.browse_result.page = Some(PageSummary {
+                range: BrowsePage::default(),
+                rows: 1,
+                has_next: false,
+            });
             let array: ArrayRef = if index == 0 {
                 values.clone()
             } else {
@@ -246,6 +379,7 @@ mod tests {
         drop(values);
         trim_cache(&mut tabs);
         assert!(tabs[0].browse_result.preview.is_none());
+        assert!(tabs[0].browse_result.page.is_none());
         assert!(tabs[0].browse_result.selected.is_none());
         assert!(weak.upgrade().is_none());
         assert_eq!(tabs[0].sql, "draft 0");

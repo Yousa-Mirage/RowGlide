@@ -9,7 +9,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use rowglide_app::Query;
+use rowglide_app::{BrowsePage, Query};
 
 impl Workspace {
     // File tabs restore the selected file session.
@@ -79,9 +79,11 @@ impl Workspace {
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.query = Query {
                             source: this.query.source,
+                            limit: Some(BrowsePage::default().limit()),
                             ..Default::default()
                         };
                         this.active_tab_mut().browse = this.query.clone();
+                        this.active_tab_mut().drafts = super::state::BrowseDraft::default();
                         this.reset_inputs(window, cx);
 
                         this.run(window, cx);
@@ -188,6 +190,29 @@ impl Workspace {
                         .ghost()
                         .label("Cancel")
                         .on_click(cx.listener(|this, _, _, cx| this.cancel(cx))),
+                )
+            })
+            // Browse navigation replaces the current page; it never appends rows.
+            .when(!self.sql_open, |s| {
+                s.child(
+                    Button::new("previous-page")
+                        .small()
+                        .ghost()
+                        .label("Previous")
+                        .disabled(!self.can_turn_page(false, cx))
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.turn_page(false, window, cx)),
+                        ),
+                )
+                .child(
+                    Button::new("next-page")
+                        .small()
+                        .ghost()
+                        .label("Next")
+                        .disabled(!self.can_turn_page(true, cx))
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.turn_page(true, window, cx)),
+                        ),
                 )
             })
             .child(
