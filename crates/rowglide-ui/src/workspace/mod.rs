@@ -3,6 +3,7 @@
 mod controls;
 mod files;
 mod inspector;
+mod memory;
 mod query;
 mod sql;
 mod state;
@@ -49,6 +50,10 @@ pub(crate) struct Workspace {
     sql: Entity<EditorState>,
     /// Owned event/observation registrations kept alive for the workspace lifetime.
     _subscriptions: Vec<Subscription>,
+    /// Latest whole-process resident memory sample in bytes, or unavailable.
+    memory_bytes: Option<u64>,
+    /// Owns periodic sampling independently of queries; dropping the workspace cancels it.
+    _memory_task: Task<()>,
 
     // Background request lifecycle and status.
     /// UI completion task for the current query; dropping it cancels the completion future.
@@ -169,6 +174,8 @@ impl Workspace {
             offset,
             sql,
             _subscriptions: subscriptions,
+            memory_bytes: None,
+            _memory_task: Self::watch_memory(cx),
             task: None,
             cancellation: Cancellation::default(),
             opening_cancel: Cancellation::default(),
@@ -253,12 +260,30 @@ impl Render for Workspace {
                 .size_full()
                 .flex()
                 .flex_col()
-                .items_center()
-                .justify_center()
-                .gap_3()
-                .child("Open a Parquet or CSV file")
-                .child(self.render_open_button(cx))
-                .child(div().text_sm().child(self.status.clone()))
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .justify_center()
+                        .gap_3()
+                        .child("Open a Parquet or CSV file")
+                        .child(self.render_open_button(cx))
+                        .child(div().text_sm().child(self.status.clone())),
+                )
+                .child(
+                    div()
+                        .min_h(px(28.))
+                        .px_5()
+                        .py(px(2.))
+                        .border_t_1()
+                        .border_color(rgb(0xe4e8e7))
+                        .flex()
+                        .items_center()
+                        .justify_end()
+                        .child(self.render_memory()),
+                )
                 .into_any_element();
         }
         let mut content = div()

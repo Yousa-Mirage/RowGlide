@@ -19,6 +19,8 @@ Use **Open files…** to select local `.parquet`, `.pq`, or `.csv` files. Files 
 in folder tabs with independent Browse and SQL sessions. Browse supports text
 search across string columns, scalar sorting, Limit and Offset. SQL supports a
 single SELECT/WITH query against `current_file`, including aggregates and joins.
+The status bar shows whole-process resident memory (RSS), sampled in the background
+once per second and displayed in MiB/GiB. An unavailable reading appears as `—`.
 
 Browse uses explicit pages: **Limit** is the page size (default 1,000) and
 **Offset** is the zero-based start. **Previous / Next** replace the page and

@@ -229,11 +229,6 @@ impl Workspace {
                         ),
                 )
             })
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(rgb(0x6c7b73))
-                    .child("LOCAL FILE"),
-            )
+            .child(self.render_memory())
     }
 }

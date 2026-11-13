@@ -33,6 +33,7 @@ arrow-schema = "60"
 arrow-ipc = "60"
 async-channel = "2.5"
 thiserror = "2"
+sysinfo = { version = "0.31.4", default-features = false, features = ["system"] }
 
 # Lint configuration
 [workspace.lints.rust]

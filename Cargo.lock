@@ -5717,6 +5717,7 @@ dependencies = [
  "arrow-schema",
  "gpui-kit",
  "rowglide-core",
+ "sysinfo",
 ]
 
 [[package]]
