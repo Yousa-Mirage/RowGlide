@@ -5711,6 +5711,7 @@ version = "0.1.0"
 dependencies = [
  "rowglide-core",
  "rowglide-ui",
+ "sysinfo 0.40.3",
 ]
 
 [[package]]

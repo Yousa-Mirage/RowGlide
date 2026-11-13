@@ -44,6 +44,21 @@ reloadable batches, then incrementally spills least-recently-used results into
 private IPC files. Scrolling reads generated rows, without triggering query
 pagination; cache misses are loaded asynchronously.
 
+The application-wide SQL memory budget defaults to `min(4 GiB, total RAM / 4)`;
+unavailable RAM detection falls back to 512 MiB. The shared IPC disk budget is
+32 GiB. These are per-application-instance limits, separate from DuckDB execution
+memory and spill. The status bar continues to show only whole-process RSS.
+
+Optional startup overrides use positive integers in binary units:
+
+- `ROWGLIDE_MEMORY_LIMIT_MIB=4096`: retain up to 4 GiB across SQL results.
+- `ROWGLIDE_DISK_LIMIT_GIB=32`: allow up to 32 GiB of SQL IPC storage.
+
+Overrides can exceed automatic defaults; malformed or overflowing values fail
+startup explicitly. After spilling, newly produced batches go directly to disk;
+read-back caches retain at most 64 MiB per result (or one larger batch), subject
+to the shared budget. Memory-only batches remain protected until persisted.
+
 Each result has a 65,536-batch index ceiling. Shared byte budgets fail explicitly,
 never by successful truncation. Cancelled or failed queries retain committed rows
 marked **Partial result**. Transport, decoding, inspector references, Browse pages
@@ -90,8 +105,8 @@ tests but is no longer the application's default.
 - `rowglide-core`: shared models, backend contracts, pagination and engine implementations.
 
 Dependencies flow from app to UI/core, and from UI to core. Core never depends
-on app or GUI crates. App injects a concrete backend through
-`rowglide_ui::run(Arc<dyn Backend>)`; UI consumes the shared contract.
+on app or GUI crates. App injects a concrete backend and shared result store through
+`rowglide_ui::run(backend, results)`; UI consumes the shared contracts.
 
 ## Code layout
 

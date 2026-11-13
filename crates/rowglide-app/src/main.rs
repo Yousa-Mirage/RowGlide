@@ -3,7 +3,9 @@
 //! The executable chooses the query engine and delegates native presentation to
 //! `rowglide-ui`. Shared models and backend behavior live in `rowglide-core`.
 
-use rowglide_core::{DuckDbBackend, cleanup_temporary_storage};
+mod config;
+
+use rowglide_core::{DuckDbBackend, QueryError, ResultStore, cleanup_temporary_storage};
 use std::sync::Arc;
 
 /// Construct the local-file DuckDB backend and start the native UI on the main thread.
@@ -11,7 +13,8 @@ use std::sync::Arc;
 /// Backend selection happens here so the UI can also be launched with another
 /// implementation of the same contract, such as the deterministic mock backend.
 /// Startup cache recovery runs in the background and preserves other live instances.
-fn main() -> Result<(), rowglide_core::QueryError> {
+fn main() -> Result<(), QueryError> {
+    let results = ResultStore::new(config::cache_limits()?)?;
     if let Err(error) = std::thread::Builder::new()
         .name("cache-recovery".into())
         .spawn(|| {
@@ -22,9 +25,6 @@ fn main() -> Result<(), rowglide_core::QueryError> {
     {
         eprintln!("Cannot start temporary cache recovery: {error}");
     }
-    rowglide_ui::run(
-        Arc::new(DuckDbBackend::default()),
-        rowglide_core::ResultStore::new(rowglide_core::CacheLimits::default())?,
-    );
+    rowglide_ui::run(Arc::new(DuckDbBackend::default()), results);
     Ok(())
 }
