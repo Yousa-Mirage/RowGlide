@@ -3,7 +3,7 @@
 use super::state::{BrowseDraft, PageSummary, RequestKey};
 use super::{TabMode, Workspace};
 use gpui_kit::*;
-use rowglide_core::{BrowsePage, Cancellation, Preview};
+use rowglide_core::{BrowsePage, Cancellation};
 use std::time::Instant;
 
 impl Workspace {
@@ -11,7 +11,7 @@ impl Workspace {
     ///
     /// Completion handlers compare this snapshot with the live key before updating the
     /// GUI, preventing older requests from replacing another session's result.
-    fn request_key(&self) -> RequestKey {
+    pub(super) fn request_key(&self) -> RequestKey {
         RequestKey {
             generation: self.generation,
             tab: self.active_tab,
@@ -125,11 +125,12 @@ impl Workspace {
     ///
     /// Cancels the preceding token, advances request identity, clears selection/page
     /// metadata and enters loading state. Browse collects a complete bounded page;
-    /// SQL uses the legacy preview collector. Completion updates the table and status
+    /// SQL starts a continuously generated disk-backed result. Completion updates status
     /// only if tab, mode and generation still match, resets scrolling for nonempty
     /// results, and reports errors without publishing partial Browse pages.
     pub(super) fn run(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.cancellation.cancel();
+        self.task = None;
         self.cancellation = Cancellation::default();
         self.generation += 1;
         let request = self.request_key();
@@ -140,42 +141,44 @@ impl Workspace {
         self.error = false;
         self.status = "Loading data…".into();
         self.selected = None;
+        self.pending_cell = None;
         self.expanded.clear();
 
         self.table.update(cx, |table, cx| {
             table.clear_selection(cx);
             table.delegate_mut().loading = true;
             table.delegate_mut().preview = None;
+            table.delegate_mut().sql_result = None;
+            table.delegate_mut().sql_snapshot = None;
             table.refresh(cx);
             cx.notify();
         });
+
+        if self.sql_open {
+            self.start_sql(cx);
+            cx.notify();
+            return;
+        }
 
         let backend = self.backend.clone();
         let query = self.query.clone();
         let cancel = self.cancellation.clone();
         let work = cx.background_executor().spawn(async move {
             let started = Instant::now();
-            let result = if query.sql.is_some() {
-                backend
-                    .query(query, cancel.clone())
-                    .and_then(|cursor| Preview::collect(cursor, &cancel))
-                    .map(|preview| (preview, None))
-            } else {
-                BrowsePage::new(
-                    query.limit.unwrap_or(BrowsePage::default().limit()),
-                    query.offset,
-                )
-                .and_then(|range| {
-                    range.load(backend.as_ref(), query, &cancel).map(|result| {
-                        let page = PageSummary {
-                            range,
-                            rows: result.preview.rows,
-                            has_next: result.has_next,
-                        };
-                        (result.preview, Some(page))
-                    })
+            let result = BrowsePage::new(
+                query.limit.unwrap_or(BrowsePage::default().limit()),
+                query.offset,
+            )
+            .and_then(|range| {
+                range.load(backend.as_ref(), query, &cancel).map(|result| {
+                    let page = PageSummary {
+                        range,
+                        rows: result.preview.rows,
+                        has_next: result.has_next,
+                    };
+                    (result.preview, page)
                 })
-            };
+            });
             (result, started.elapsed())
         });
 
@@ -190,21 +193,9 @@ impl Workspace {
                 this.busy = false;
                 match result {
                     Ok((preview, page)) => {
-                        this.active_tab_mut().result_mut().page = page;
-                        this.status = if let Some(page) = page {
-                            format!("{} · {:.0} ms", page.label(), elapsed.as_secs_f64() * 1000.)
-                        } else {
-                            format!(
-                                "{} loaded rows{} · {:.0} ms",
-                                preview.rows,
-                                if preview.truncated {
-                                    " · bounded preview"
-                                } else {
-                                    ""
-                                },
-                                elapsed.as_secs_f64() * 1000.
-                            )
-                        };
+                        this.active_tab_mut().result_mut().page = Some(page);
+                        this.status =
+                            format!("{} · {:.0} ms", page.label(), elapsed.as_secs_f64() * 1000.);
                         this.table.update(cx, |table, cx| {
                             let grid = table.delegate_mut();
                             grid.preview = Some(preview);
@@ -249,11 +240,15 @@ impl Workspace {
         self.busy = false;
         self.error = false;
         self.status = "Cancelled · run a query to load data".into();
+        if let Some(result) = &self.table.read(cx).delegate().sql_result {
+            result.cancel();
+        }
 
         self.table.update(cx, |table, cx| {
             table.delegate_mut().loading = false;
             cx.notify();
         });
+        self.watch_sql(cx);
         cx.notify();
     }
 
@@ -263,14 +258,20 @@ impl Workspace {
     /// queries, records the cache recency stamp and trims inactive results. Arrow
     /// buffers move out of the shared table rather than being copied.
     pub(super) fn save_session(&mut self, cx: &mut Context<Self>) {
+        self.pending_cell = None;
         if self.busy {
             self.cancel(cx);
         }
+        self.task = None;
         let drafts = self.browse_draft(cx);
         let sql = self.sql.read(cx).value().to_string();
         let preview = self
             .table
             .update(cx, |table, _| table.delegate_mut().preview.take());
+        let sql_result = self.table.update(cx, |table, _| {
+            table.delegate_mut().sql_snapshot = None;
+            table.delegate_mut().sql_result.take()
+        });
         let selected = self.selected.take();
         let expanded = std::mem::take(&mut self.expanded);
         let status = self.status.clone();
@@ -281,6 +282,7 @@ impl Workspace {
         tab.sql = sql;
         let result = tab.result_mut();
         result.preview = preview;
+        result.sql_result = sql_result;
         result.selected = selected;
         result.expanded = expanded;
         result.status = status;
@@ -303,6 +305,7 @@ impl Workspace {
         let result = self.active_tab_mut().result_mut();
         let initial = !result.initialized;
         let preview = result.preview.take();
+        let sql_result = result.sql_result.take();
         let selected = result.selected.take();
         let expanded = std::mem::take(&mut result.expanded);
         let status = result.status.clone();
@@ -315,11 +318,14 @@ impl Workspace {
         self.table.update(cx, |table, cx| {
             let grid = table.delegate_mut();
             grid.preview = preview;
+            grid.sql_snapshot = sql_result.as_ref().map(|result| result.snapshot());
+            grid.sql_result = sql_result;
             grid.sort = sort;
             grid.sortable = sortable;
             grid.loading = false;
             table.refresh(cx);
         });
+        self.watch_sql(cx);
         // Only the initial file browse is automatic; SQL always requires Run.
         if initial && !self.sql_open {
             self.run(window, cx);

@@ -53,7 +53,7 @@ pub enum ResultPhase {
 pub struct ResultSnapshot {
     /// Result schema once startup has produced it, including for empty results.
     pub schema: Option<SchemaRef>,
-    /// Number of rows durably committed to the temporary result file.
+    /// Number of rows fully written to indexed segments in the temporary result file.
     pub rows: usize,
     /// Current terminal or running state of the result.
     pub phase: ResultPhase,
@@ -414,6 +414,113 @@ mod tests {
     use crate::MockBackend;
     use arrow_array::Int64Array;
     use std::time::Instant;
+
+    /// Fixture whose cursor emits one batch and then waits for cancellation.
+    struct PausedBackend;
+
+    /// A single-batch cursor that keeps the query running until its token is cancelled.
+    struct PausedCursor {
+        /// Typed fixture data, emitted once before blocking.
+        batch: Option<RecordBatch>,
+        /// Schema remains available after the batch is delivered.
+        schema: SchemaRef,
+        /// Cancellation releases the blocked producer without a separate test signal.
+        cancel: Cancellation,
+    }
+
+    impl Backend for PausedBackend {
+        /// This fixture creates query data directly and has no registered files.
+        fn sources(&self) -> Vec<crate::Source> {
+            Vec::new()
+        }
+
+        /// Create one typed row followed by an intentionally unfinished stream.
+        fn query(
+            &self,
+            _: Query,
+            cancel: Cancellation,
+        ) -> Result<Box<dyn crate::BatchCursor>, QueryError> {
+            let batch = RecordBatch::try_from_iter([(
+                "id",
+                Arc::new(Int64Array::from(vec![42])) as arrow_array::ArrayRef,
+            )])?;
+            Ok(Box::new(PausedCursor {
+                schema: batch.schema(),
+                batch: Some(batch),
+                cancel,
+            }))
+        }
+    }
+
+    impl crate::BatchCursor for PausedCursor {
+        /// Return the fixture schema independently of stream progress.
+        fn schema(&self) -> SchemaRef {
+            self.schema.clone()
+        }
+
+        /// The deliberately unfinished stream does not advertise a total.
+        fn total_rows(&self) -> Option<usize> {
+            None
+        }
+
+        /// Emit one batch, then cooperatively block until the test cancels execution.
+        fn next_batch(&mut self) -> Result<Option<RecordBatch>, QueryError> {
+            if let Some(batch) = self.batch.take() {
+                return Ok(Some(batch));
+            }
+            loop {
+                self.cancel.check()?;
+                thread::sleep(Duration::from_millis(1));
+            }
+        }
+    }
+
+    /// A committed first batch is readable while the producer is still blocked on more data.
+    #[test]
+    fn rows_are_available_before_completion() -> Result<(), QueryError> {
+        let result = QueryResult::start(
+            Arc::new(PausedBackend),
+            Query::default(),
+            Cancellation::default(),
+            ResultLimits::default(),
+        )?;
+        let (batch, local) = row(&result, 0)?;
+        assert_eq!(batch.num_rows(), 1);
+        assert_eq!(local, 0);
+        assert_eq!(result.snapshot().phase, ResultPhase::Running);
+        result.cancel();
+        assert_eq!(result.snapshot().phase, ResultPhase::Cancelled);
+        assert!(result.row(0).is_some());
+        Ok(())
+    }
+
+    /// A damaged disk segment changes a completed result to an explicit read failure.
+    #[test]
+    fn cache_read_failure_is_not_success() -> Result<(), QueryError> {
+        let result = QueryResult::start(
+            Arc::new(MockBackend),
+            Query::default(),
+            Cancellation::default(),
+            ResultLimits::default(),
+        )?;
+        assert_eq!(finished(&result)?.phase, ResultPhase::Complete);
+        let path = result
+            .shared
+            .state()
+            .disk
+            .as_ref()
+            .map(|disk| disk.path())
+            .ok_or_else(|| disk::error("Missing file"))?;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .and_then(|file| file.set_len(0))
+            .map_err(disk::error)?;
+        assert!(row(&result, 49999).is_err());
+        assert!(matches!(result.snapshot().phase, ResultPhase::Failed(_)));
+        assert!(result.row(0).is_some());
+        Ok(())
+    }
 
     /// Wait for a terminal phase with a deadline so worker regressions fail instead of hang.
     fn finished(result: &QueryResult) -> Result<ResultSnapshot, QueryError> {

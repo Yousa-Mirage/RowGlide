@@ -108,7 +108,7 @@ impl Workspace {
     /// Build the SQL editor panel and explicit Run query action.
     ///
     /// The hint names the `current_file` relation and accurately describes the current
-    /// bounded-preview implementation. Browse pagination controls do not govern SQL.
+    /// continuous result loading. Browse pagination controls do not govern SQL.
     pub(super) fn render_sql(&self, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .p_4()
@@ -144,7 +144,7 @@ impl Workspace {
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .child(
-                        "Query current_file with SELECT or WITH. Results show a bounded preview.",
+                        "Query current_file with SELECT or WITH. All returned rows are loaded; Cancel stops execution.",
                     ),
             )
     }
@@ -182,7 +182,7 @@ impl Workspace {
             )
             .when(
                 !self.busy
-                    && self.table.read(cx).delegate().preview.is_none()
+                    && !self.table.read(cx).delegate().has_result()
                     && (!self.sql_open || self.active_tab().last_sql.is_some()),
                 |s| {
                     s.child(

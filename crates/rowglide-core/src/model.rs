@@ -63,7 +63,7 @@ pub struct Query {
 /// Typed Arrow buffers retained for display, independent of source metadata.
 ///
 /// This container represents either a complete Browse page from `BrowsePage::load`
-/// or the legacy bounded SQL preview from `Self::collect`. Its row count describes
+/// or an explicit bounded preview from `Self::collect`. Its row count describes
 /// only retained rows; it is not the total number of matching source rows.
 pub struct Preview {
     /// Query-result schema, available even when no rows were retained.
@@ -82,7 +82,8 @@ pub struct Preview {
 impl Preview {
     /// Collect a legacy preview of at most 8,192 rows and 16 MiB of batch buffers.
     ///
-    /// This blocking helper is used for SQL previews and tests, not Browse pagination.
+    /// This blocking helper remains for explicit previews and tests. Production SQL uses
+    /// `crate::QueryResult`; Browse pagination uses `crate::BrowsePage`.
     /// It sets `truncated` when collection stops at a budget boundary, preserves
     /// the cursor's optional total, and drops the cursor on every return path.
     ///

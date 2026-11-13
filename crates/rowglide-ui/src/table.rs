@@ -1,13 +1,15 @@
-//! Table adapter for typed previews and column-sort events.
+//! Table adapter for Browse pages, streamed SQL results and column-sort events.
 
 use crate::cells;
-use arrow_schema::DataType;
+use arrow_array::RecordBatch;
+use arrow_schema::{DataType, SchemaRef};
 use gpui_kit::component::{
     ActiveTheme,
     table::{Column, ColumnSort, TableDelegate, TableState},
 };
 use gpui_kit::*;
-use rowglide_core::{Preview, Sort};
+use rowglide_core::{Preview, QueryResult, ResultSnapshot, Sort};
+use std::sync::Arc;
 
 /// Column-header event requesting a new global Browse sort.
 ///
@@ -19,12 +21,16 @@ pub(crate) struct SortRequested(pub(crate) Option<Sort>);
 
 /// GPUI table delegate backed by one retained typed result.
 ///
-/// The workspace owns query execution and replaces this result on completion.
+/// The workspace owns query execution and publishes Browse pages or SQL progress.
 /// The delegate exposes rows, columns and visible-cell summaries to the virtualized
-/// table; it neither reads files nor pulls batches during rendering.
+/// table. Cache misses enqueue bounded background reads without doing file I/O here.
 pub(crate) struct Grid {
     /// Active typed result, owned here rather than in the tab while displayed.
     pub(crate) preview: Option<Preview>,
+    /// Active SQL cache handle; retains its disk file and provides nonblocking row access.
+    pub(crate) sql_result: Option<Arc<QueryResult>>,
+    /// Coalesced SQL progress snapshot used by rendering without repeated state locks.
+    pub(crate) sql_snapshot: Option<ResultSnapshot>,
     /// Whether a replacement result is being loaded.
     pub(crate) loading: bool,
     /// Enables Browse header sorting; false in SQL mode.
@@ -43,17 +49,48 @@ pub(crate) struct GridEvents;
 
 impl EventEmitter<SortRequested> for GridEvents {}
 
+impl Grid {
+    /// Return the active result schema, including an empty SQL query's schema.
+    fn schema(&self) -> Option<SchemaRef> {
+        self.sql_snapshot
+            .as_ref()
+            .and_then(|state| state.schema.clone())
+            .or_else(|| self.preview.as_ref().map(|preview| preview.schema.clone()))
+    }
+
+    /// Resolve a retained Browse row or request a missing SQL batch asynchronously.
+    /// Returned batches share Arrow buffers; rendering never reads the disk file.
+    pub(crate) fn row(&self, row: usize) -> Option<(RecordBatch, usize)> {
+        if let Some(result) = &self.sql_result {
+            result.row(row)
+        } else {
+            self.preview
+                .as_ref()?
+                .row(row)
+                .map(|(batch, offset)| (batch.clone(), offset))
+        }
+    }
+
+    /// Whether either mode retains a result, including empty or partially loaded SQL data.
+    pub(crate) fn has_result(&self) -> bool {
+        self.preview.is_some() || self.sql_result.is_some()
+    }
+}
+
 impl TableDelegate for Grid {
     /// Return the retained result's schema width, or zero before a result exists.
     ///
     /// An empty result with a schema still exposes its columns.
     fn columns_count(&self, _: &App) -> usize {
-        self.preview.as_ref().map_or(0, |p| p.schema.fields().len())
+        self.schema().map_or(0, |schema| schema.fields().len())
     }
 
     /// Return the number of retained display rows, never a source or estimated total.
     fn rows_count(&self, _: &App) -> usize {
-        self.preview.as_ref().map_or(0, |p| p.rows)
+        self.sql_snapshot.as_ref().map_or_else(
+            || self.preview.as_ref().map_or(0, |p| p.rows),
+            |state| state.rows,
+        )
     }
 
     /// Build one header from its schema name, compact type label and current sort.
@@ -61,10 +98,10 @@ impl TableDelegate for Grid {
     /// Nested columns and SQL results disable header sorting. An unavailable index gets
     /// a nonselectable placeholder header while results are being replaced.
     fn column(&self, index: usize, _: &App) -> Column {
-        let Some(field) = self
-            .preview
+        let schema = self.schema();
+        let Some(field) = schema
             .as_ref()
-            .and_then(|preview| preview.schema.fields().get(index))
+            .and_then(|schema| schema.fields().get(index))
         else {
             return Column::new(format!("unavailable-{index}"), "Unavailable")
                 .selectable(false)
@@ -151,11 +188,15 @@ impl TableDelegate for Grid {
         cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         let value = self
-            .preview
-            .as_ref()
-            .and_then(|p| p.row(row))
+            .row(row)
             .map(|(b, r)| cells::summary(b.column(col), r))
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                if self.sql_result.is_some() {
+                    "Loading…".into()
+                } else {
+                    String::new()
+                }
+            });
         let color = if value == "null" {
             cx.theme().muted_foreground
         } else {
@@ -176,9 +217,7 @@ impl TableDelegate for Grid {
     /// by TableState and must be within the result schema. Text can be truncated by
     /// `cells::summary`; this is not a full-value serialization.
     fn cell_label(&self, row: usize, col: usize, _: &App) -> Option<SharedString> {
-        self.preview
-            .as_ref()?
-            .row(row)
+        self.row(row)
             .map(|(b, r)| cells::summary(b.column(col), r).into())
     }
 

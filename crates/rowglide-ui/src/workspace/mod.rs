@@ -4,6 +4,7 @@ mod controls;
 mod files;
 mod inspector;
 mod query;
+mod sql;
 mod state;
 
 use state::{TabMode, TabState};
@@ -70,6 +71,8 @@ pub(crate) struct Workspace {
     sql_open: bool,
     /// Selected column label, retained Arrow array and row for the inspector.
     selected: Option<(String, ArrayRef, usize)>,
+    /// Clicked SQL cell awaiting an asynchronous cache read; cleared on session changes.
+    pending_cell: Option<(usize, usize)>,
     /// Expanded inspector node paths for the active result.
     expanded: HashSet<String>,
 }
@@ -91,6 +94,8 @@ impl Workspace {
             TableState::new(
                 Grid {
                     preview: None,
+                    sql_result: None,
+                    sql_snapshot: None,
                     loading: true,
                     sort: None,
                     events: events.clone(),
@@ -132,15 +137,14 @@ impl Workspace {
             ),
             cx.subscribe(&table, |this, table, event, cx| {
                 if let TableEvent::SelectCell(row, col) = event {
-                    this.selected = table.read(cx).delegate().preview.as_ref().and_then(|p| {
-                        p.row(*row).map(|(batch, r)| {
-                            (
-                                batch.schema().field(*col).name().clone(),
-                                batch.column(*col).clone(),
-                                r,
-                            )
-                        })
+                    this.selected = table.read(cx).delegate().row(*row).map(|(batch, r)| {
+                        (
+                            batch.schema().field(*col).name().clone(),
+                            batch.column(*col).clone(),
+                            r,
+                        )
                     });
+                    this.pending_cell = this.selected.is_none().then_some((*row, *col));
                     this.expanded.clear();
                     this.expanded.insert("value".into());
                     cx.notify();
@@ -174,6 +178,7 @@ impl Workspace {
             error: false,
             sql_open: false,
             selected: None,
+            pending_cell: None,
             expanded: HashSet::new(),
         };
 

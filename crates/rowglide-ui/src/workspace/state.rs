@@ -1,8 +1,8 @@
 //! Per-file browse and SQL sessions with bounded result retention.
 
 use arrow_array::ArrayRef;
-use rowglide_core::{BrowsePage, Preview, Query, QueryError, Source};
-use std::collections::HashSet;
+use rowglide_core::{BrowsePage, Preview, Query, QueryError, QueryResult, Source};
+use std::{collections::HashSet, sync::Arc};
 
 /// Select which independent query and result session a file tab exposes.
 ///
@@ -216,12 +216,14 @@ impl TabState {
 
 /// One mode's retained result, inspector state, status and cache bookkeeping.
 ///
-/// `preview` is temporarily absent while its buffers are in the active table, after
-/// eviction, or before completion. `initialized` distinguishes a never-run session
+/// `preview` and `sql_result` move into the active table while displayed and are
+/// absent after eviction or before a result exists. `initialized` distinguishes a never-run session
 /// from one requiring explicit reload. Page metadata is meaningful only for Browse.
 pub(super) struct ResultState {
     /// Inactive result buffers; moved into the shared table while active.
     pub(super) preview: Option<Preview>,
+    /// Retained SQL result and temporary file, independently owned from the Browse page.
+    pub(super) sql_result: Option<Arc<QueryResult>>,
     /// Completed Browse navigation metadata; absent for SQL and invalidated pages.
     pub(super) page: Option<PageSummary>,
     /// Saved user-facing status text restored with this session.
@@ -243,6 +245,7 @@ impl Default for ResultState {
     fn default() -> Self {
         Self {
             preview: None,
+            sql_result: None,
             page: None,
             status: "Ready".into(),
             error: false,
@@ -257,7 +260,7 @@ impl Default for ResultState {
 /// Evict the least recently touched stored results until at most three remain.
 ///
 /// The active result normally lives in the table and is not counted here. Eviction
-/// releases preview and inspector array references plus page metadata, while keeping
+/// releases Browse buffers, SQL file handles, inspector references and page metadata, keeping
 /// drafts and applied queries for explicit reload. This bounds retained entries,
 /// not all engine/transient allocations in the process.
 pub(super) fn trim_cache(tabs: &mut [TabState]) {
@@ -271,7 +274,7 @@ pub(super) fn trim_cache(tabs: &mut [TabState]) {
                     (TabMode::Sql, &tab.sql_result),
                 ]
                 .into_iter()
-                .filter(|(_, result)| result.preview.is_some())
+                .filter(|(_, result)| result.preview.is_some() || result.sql_result.is_some())
                 .map(move |(mode, result)| (result.touched, index, mode))
             })
             .collect::<Vec<_>>();
@@ -286,10 +289,11 @@ pub(super) fn trim_cache(tabs: &mut [TabState]) {
             TabMode::Sql => &mut tab.sql_result,
         };
         result.preview = None;
+        result.sql_result = None;
         result.page = None;
         result.selected = None;
         result.expanded.clear();
-        result.status = "Preview released · run again to reload".into();
+        result.status = "Result released · run again to reload".into();
         result.error = false;
     }
 }
@@ -482,6 +486,31 @@ mod tests {
                 .iter()
                 .all(|tab| tab.browse_result.preview.is_some())
         );
+        Ok(())
+    }
+
+    /// SQL handles participate in the same eviction budget while drafts remain per tab.
+    #[test]
+    fn eviction_releases_sql_results() -> Result<(), QueryError> {
+        let mut tabs = vec![tab(0), tab(1), tab(2), tab(3)];
+        let mut handles = Vec::new();
+        for (index, tab) in tabs.iter_mut().enumerate() {
+            let result = Arc::new(QueryResult::start(
+                Arc::new(rowglide_core::MockBackend),
+                Query::default(),
+                rowglide_core::Cancellation::default(),
+                rowglide_core::ResultLimits::default(),
+            )?);
+            result.cancel();
+            handles.push(Arc::downgrade(&result));
+            tab.sql = format!("draft {index}");
+            tab.sql_result.touched = index as u64;
+            tab.sql_result.sql_result = Some(result);
+        }
+        trim_cache(&mut tabs);
+        assert!(handles[0].upgrade().is_none());
+        assert!(handles[1..].iter().all(|handle| handle.upgrade().is_some()));
+        assert_eq!(tabs[0].sql, "draft 0");
         Ok(())
     }
 }

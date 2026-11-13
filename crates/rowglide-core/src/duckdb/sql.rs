@@ -17,8 +17,8 @@ pub(super) fn identifier(name: &str) -> String {
 ///
 /// Browse filters string columns, applies a source-schema sort with source-order
 /// tie breaking, then honors the requested Limit/Offset. SQL is parsed as one
-/// SELECT/WITH query and serialized into the current legacy 8,193-row preview
-/// wrapper; Browse fields do not alter that SQL path.
+/// SELECT/WITH query and serialized without an additional row limit; Browse
+/// fields do not alter that SQL path.
 ///
 /// Returns errors for invalid SQL, unsupported statement shapes, missing sort
 /// columns or ranges outside signed 64-bit integers. This validator is not a
@@ -30,12 +30,8 @@ pub(super) fn build(query: &Query, schema: &Schema) -> Result<(String, Vec<Value
         let [Statement::Query(select)] = statements.as_slice() else {
             return Err(QueryError::Invalid("Enter one SELECT or WITH query".into()));
         };
-        // Serialize the parsed AST so trailing comments and semicolons cannot
-        // escape the result wrapper. DuckDB remains the execution authority.
-        return Ok((
-            format!("SELECT * FROM ({select}) AS result LIMIT 8193"),
-            vec![],
-        ));
+        // Execute exactly the validated query semantics, including its own LIMIT/OFFSET.
+        return Ok((select.to_string(), vec![]));
     }
 
     let mut sql = "SELECT * FROM current_file".to_string();

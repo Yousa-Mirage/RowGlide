@@ -34,9 +34,18 @@ smaller Limit. The GUI presents each completed page. Sorting/filtering precede
 pagination; sorting ties use source order. Deep offsets can require rescanning,
 and files must remain unchanged for consistent navigation.
 
-SQL currently retains the bounded preview (8,192 rows / 16 MiB, with an outer
-8,193-row query cap). Complete SQL result streaming and bounded disk caching are
-planned separately; incremental GUI presentation is not yet implemented.
+SQL executes the submitted query without an added row limit; only its own
+LIMIT/OFFSET govern the result. Background workers continuously write typed Arrow
+batches to a private temporary IPC file and publish available rows incrementally.
+Scrolling reads generated rows through a bounded memory cache; it does not trigger
+query pagination. Missing batches load asynchronously with a temporary placeholder.
+
+Each SQL result has a 64 MiB Arrow cache, a 2 GiB temporary-file budget and a
+65,536-batch index budget. Exceeding a budget is an explicit failure, never successful
+truncation. Cancelled or failed queries retain committed rows marked **Partial result**.
+Transport, decoding, inspector references and engine allocations are additional to
+the cache budget. Releasing a result cancels its workers and removes its temporary
+file after they exit.
 
 Each query uses a temporary in-memory connection, at most four execution threads,
 a 512 MB DuckDB memory limit, and a private temporary spill directory capped at
@@ -76,6 +85,8 @@ on app or GUI crates. App injects a concrete backend through
 - `model.rs`: source metadata, query descriptions and retained Arrow results.
 - `backend.rs`: backend/cursor interfaces, cancellation and shared errors.
 - `pagination.rs`: validated Browse ranges and bounded page collection.
+- `session.rs`: cancellable, capacity-one query events and background cursor cleanup.
+- `result/`: continuous Arrow IPC storage, bounded memory cache and asynchronous rereads.
 - `duckdb/`: private file registry, SQL construction and Arrow worker transport.
 - `mock.rs`: deterministic fixture backend and its behavior tests.
 
@@ -85,6 +96,7 @@ on app or GUI crates. App injects a concrete backend through
 - `workspace/mod.rs`: shared view state, event wiring, and main layout.
 - `workspace/controls.rs`: file tabs, browse toolbar, SQL editor, and status bar.
 - `workspace/query.rs`: query execution, cancellation, and session switching.
+- `workspace/sql.rs`: streamed SQL progress, cache notifications and terminal status.
 - `workspace/files.rs`: native file selection and background schema inspection.
 - `workspace/state.rs`: per-file browse/SQL state and bounded result cache.
 - `workspace/inspector.rs`: selected-cell panel and nested-value tree.
@@ -94,8 +106,10 @@ on app or GUI crates. App injects a concrete backend through
 Workspace owns shared GUI controls and the active task. Each `TabState` retains
 browse inputs, SQL drafts, mode, results and inspector state. Switching a tab or
 mode cancels pending work and restores its session. SQL mode disables browse
-filters and column sorting. Up to three inactive previews are retained alongside
-the active result, each bounded to 16 MiB. Eviction keeps inputs;
+filters and column sorting. Up to three inactive results are retained alongside
+the active result. Browse pages retain at most 16 MiB; SQL results use the per-result
+cache budgets above. These are not global process quotas. Eviction releases result
+buffers and temporary files while keeping inputs;
 use **Reload result** to rerun the last applied query. Scroll positions, column
 widths and editor undo history are not yet saved per tab.
 Table rendering and cell helpers remain independent of workspace coordination.
