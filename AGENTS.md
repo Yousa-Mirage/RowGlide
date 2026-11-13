@@ -10,22 +10,23 @@ Rowglide 是使用 Rust、GPUI 和 gpui-kit 构建的桌面 Parquet / CSV 查看
 
 ## Workspace 与依赖边界
 
-采用三个 crate，程序入口合并到 UI：
+采用三个 crate，程序入口位于 app：
 
 ```text
-crates/rowglide-app/        核心模型、请求、结果及后端接口
-crates/rowglide-ui/         GPUI 界面、交互状态及程序入口
-crates/rowglide-core/       模拟后端和后续真实后端
+crates/rowglide-app/        程序入口、具体后端构造与应用组装
+crates/rowglide-ui/         GPUI 启动、界面与交互状态
+crates/rowglide-core/       共享模型、查询接口、分页及 DuckDB / Mock 后端
 
-rowglide-ui -> rowglide-core -> rowglide-app
-rowglide-ui ------------------> rowglide-app
+rowglide-app -> rowglide-ui -> rowglide-core
+rowglide-app ----------------> rowglide-core
 ```
 
-- `app` 不依赖 GPUI、gpui-kit 或具体查询引擎；可以依赖 Arrow。
-- `core` 不依赖 UI，不持有 GUI 对象。
-- `ui` 的入口负责构造并注入后端。组件和交互逻辑通过 `app` 接口工作，不直接调用具体引擎。
+- `app` 是可执行 crate，通过 `rowglide_ui::run(backend)` 启动界面；具体引擎的选择和构造仅在此进行。
+- `ui` 是库 crate，只公开启动函数；Workspace、表格和交互模块保持私有。组件通过 `core::Backend` 接口工作，不直接调用 DuckDB / Mock 实现。
+- `core` 不依赖 app、UI 或 GPUI，不持有 GUI 对象。`model` 保存共享数据模型，`backend` 保存接口、取消与错误，`pagination` 保存分页规则，`duckdb` / `mock` 保存具体实现。
+- `duckdb` 内部的连接、SQL 构造、传输模块保持私有，内部协作使用最小可见性。对外通过 core 根模块重导出稳定类型与接口。
+- 包之间不得出现循环依赖；共享模型不能重新放回依赖 UI 的 app。
 - 打开的文件使用 gpui-kit Folder Tabs 在顶部展示与切换，不使用左侧文件侧栏。
-- 包之间不得出现循环依赖。`app` 存放共享模型与接口，程序入口仍位于 `ui`。
 - 实现前核实 gpui-kit 的实际上游地址、API、版本和平台支持，不用其他组件库静默替代。
 
 ## 数据与交互约定

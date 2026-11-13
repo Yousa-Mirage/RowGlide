@@ -1,4 +1,7 @@
-//! Native application startup and backend injection.
+//! Native GPUI presentation and interaction for an injected query backend.
+//!
+//! `run` is the public launch boundary. Workspace, table and cell implementation
+//! modules stay private; concrete engine selection belongs to `rowglide-app`.
 
 mod cells;
 mod table;
@@ -8,13 +11,14 @@ use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 use std::sync::Arc;
 
-/// Start GPUI Kit, install assets and the light theme, and open the main window.
+/// Initialize GPUI Kit and run the native window with the supplied backend.
 ///
-/// Constructs the concrete DuckDB backend only at the composition boundary, then
-/// injects it into Workspace through the application interface. Window creation
-/// errors are written to stderr; closing the last window quits the application.
-fn main() {
-    application().with_assets(assets::Assets).run(|cx| {
+/// Installs assets and the light theme, creates the workspace and quits when the
+/// last window closes. The caller selects and constructs the backend; this layer
+/// depends only on its shared interface. Invoke from the application's main
+/// thread. Window creation failures are printed to stderr before quitting.
+pub fn run(backend: Arc<dyn rowglide_core::Backend>) {
+    application().with_assets(assets::Assets).run(move |cx| {
         init(cx);
         Theme::change(ThemeMode::Light, None, cx);
 
@@ -39,14 +43,8 @@ fn main() {
             ..Default::default()
         };
 
-        if let Err(error) = open_window(options, cx, |window, cx| {
-            cx.new(|cx| {
-                workspace::Workspace::new(
-                    Arc::new(rowglide_core::DuckDbBackend::default()),
-                    window,
-                    cx,
-                )
-            })
+        if let Err(error) = open_window(options, cx, move |window, cx| {
+            cx.new(|cx| workspace::Workspace::new(backend, window, cx))
         }) {
             eprintln!("Cannot open Rowglide: {error}");
             cx.quit();

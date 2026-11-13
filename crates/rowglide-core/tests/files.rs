@@ -1,7 +1,6 @@
 use arrow_array::{Array, Int64Array};
 use duckdb::Connection;
-use rowglide_app::{Backend, Cancellation, Preview, Query, Sort};
-use rowglide_core::DuckDbBackend;
+use rowglide_core::{Backend, Cancellation, DuckDbBackend, Preview, Query, Sort};
 use std::{
     fs,
     sync::Arc,

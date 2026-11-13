@@ -1,9 +1,9 @@
 //! Local-file registry and resource-limited DuckDB connections.
 
-use crate::stream;
+use super::stream;
+use crate::{Backend, BatchCursor, Cancellation, Query, QueryError, Source};
 use arrow_schema::SchemaRef;
 use duckdb::{Config, Connection};
-use rowglide_app::{Backend, BatchCursor, Cancellation, Query, QueryError, Source};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, TryLockError},
@@ -16,13 +16,13 @@ use std::{
 /// The canonical path identifies duplicate registrations. The schema is a snapshot;
 /// queries reopen the file, so later external modifications are not isolated.
 #[derive(Clone)]
-pub(crate) struct FileSource {
+pub(super) struct FileSource {
     /// Stable registry handle and display metadata returned to callers.
-    pub(crate) info: Source,
+    pub(super) info: Source,
     /// Canonical local path reused for each independent query scan.
-    pub(crate) path: PathBuf,
+    pub(super) path: PathBuf,
     /// Source schema captured when the file was first registered.
-    pub(crate) schema: SchemaRef,
+    pub(super) schema: SchemaRef,
 }
 
 /// Local-file registry and serialized DuckDB query backend.
@@ -42,7 +42,7 @@ pub struct DuckDbBackend {
 ///
 /// This preserves its message as text; it does not retain the original error type
 /// or an error-source chain.
-pub(crate) fn error(error: impl std::fmt::Display) -> QueryError {
+pub(super) fn error(error: impl std::fmt::Display) -> QueryError {
     QueryError::Backend(error.to_string())
 }
 
@@ -52,7 +52,7 @@ pub(crate) fn error(error: impl std::fmt::Display) -> QueryError {
 /// `temp`. Preserves source insertion order and disables automatic extension
 /// loading/installing. The caller owns and cleans up the temporary directory.
 /// Configuration or connection failures are returned as backend errors.
-pub(crate) fn connection(temp: &Path) -> Result<Connection, QueryError> {
+pub(super) fn connection(temp: &Path) -> Result<Connection, QueryError> {
     let threads = thread::available_parallelism().map_or(2, |n| n.get().min(4));
     let config = Config::default()
         .max_memory("512MB")
@@ -77,7 +77,7 @@ pub(crate) fn connection(temp: &Path) -> Result<Connection, QueryError> {
 /// Binds the UTF-8 path through a DuckDB variable rather than SQL interpolation.
 /// `PARQUET` selects the Parquet reader; registry-validated CSV sources use bounded
 /// automatic inference. Returns errors for non-UTF-8 paths or reader/view setup.
-pub(crate) fn register(conn: &Connection, path: &Path, format: &str) -> Result<(), QueryError> {
+pub(super) fn register(conn: &Connection, path: &Path, format: &str) -> Result<(), QueryError> {
     let path = path
         .to_str()
         .ok_or_else(|| QueryError::Invalid("File path must be valid UTF-8".into()))?;
@@ -96,7 +96,7 @@ pub(crate) fn register(conn: &Connection, path: &Path, format: &str) -> Result<(
 /// Uses short sleeps rather than an uninterruptible mutex lock. Returns a guard
 /// that keeps the engine reserved, or an error for cancellation or a poisoned gate.
 /// Call only from background work.
-pub(crate) fn lock_engine<'a>(
+pub(super) fn lock_engine<'a>(
     gate: &'a Mutex<()>,
     cancel: &Cancellation,
 ) -> Result<std::sync::MutexGuard<'a, ()>, QueryError> {

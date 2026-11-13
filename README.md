@@ -58,15 +58,30 @@ tests but is no longer the application's default.
 
 ## Workspace
 
-- `rowglide-app`: typed Arrow results, query contracts and cancellation.
-- `rowglide-core`: DuckDB file queries, bounded streaming, and a mock backend for tests.
-- `rowglide-ui`: GPUI Kit components, interactions and application entry point.
+- `rowglide-app`: executable entry point; selects and constructs the backend.
+- `rowglide-ui`: UI library; GPUI startup, window layout and interaction state.
+- `rowglide-core`: shared models, backend contracts, pagination and engine implementations.
 
-## UI layout
+Dependencies flow from app to UI/core, and from UI to core. Core never depends
+on app or GUI crates. App injects a concrete backend through
+`rowglide_ui::run(Arc<dyn Backend>)`; UI consumes the shared contract.
 
-`rowglide-ui/src` uses a small set of modules:
+## Code layout
 
-- `main.rs`: native startup and backend injection.
+`rowglide-app/src/main.rs` is the executable composition root.
+
+`rowglide-core/src` groups the domain and backend responsibilities:
+
+- `lib.rs`: public exports for consumers.
+- `model.rs`: source metadata, query descriptions and retained Arrow results.
+- `backend.rs`: backend/cursor interfaces, cancellation and shared errors.
+- `pagination.rs`: validated Browse ranges and bounded page collection.
+- `duckdb/`: private file registry, SQL construction and Arrow worker transport.
+- `mock.rs`: deterministic fixture backend and its behavior tests.
+
+`rowglide-ui/src` encapsulates the native presentation:
+
+- `lib.rs`: public `run` entry, GPUI initialization, theme and window creation.
 - `workspace/mod.rs`: shared view state, event wiring, and main layout.
 - `workspace/controls.rs`: file tabs, browse toolbar, SQL editor, and status bar.
 - `workspace/query.rs`: query execution, cancellation, and session switching.

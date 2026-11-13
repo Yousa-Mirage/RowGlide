@@ -16,7 +16,7 @@ use gpui_kit::component::{
     table::{DataTable, TableEvent, TableState},
 };
 use gpui_kit::*;
-use rowglide_app::{Backend, BrowsePage, Cancellation, Query};
+use rowglide_core::{Backend, BrowsePage, Cancellation, Query};
 use std::{collections::HashSet, sync::Arc};
 
 /// Owns the active GUI controls and coordinates independent per-file sessions.

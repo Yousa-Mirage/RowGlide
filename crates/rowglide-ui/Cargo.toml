@@ -7,15 +7,10 @@ publish.workspace = true
 
 [dependencies]
 arrow-cast.workspace = true
-rowglide-app.workspace = true
 rowglide-core.workspace = true
 gpui-kit.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true
-
-[[bin]]
-name = "rowglide"
-path = "src/main.rs"
 
 [lints]
 workspace = true

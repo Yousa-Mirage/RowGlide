@@ -1,7 +1,6 @@
 use arrow_array::Int64Array;
 use duckdb::Connection;
-use rowglide_app::{Backend, BrowsePage, Cancellation, Preview, Query, Sort};
-use rowglide_core::DuckDbBackend;
+use rowglide_core::{Backend, BrowsePage, Cancellation, DuckDbBackend, Preview, Query, Sort};
 
 /// Read the retained first-column Int64 IDs in display order for page assertions.
 ///

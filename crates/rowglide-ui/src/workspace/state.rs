@@ -1,7 +1,7 @@
 //! Per-file browse and SQL sessions with bounded result retention.
 
 use arrow_array::ArrayRef;
-use rowglide_app::{BrowsePage, Preview, Query, QueryError, Source};
+use rowglide_core::{BrowsePage, Preview, Query, QueryError, Source};
 use std::collections::HashSet;
 
 /// Select which independent query and result session a file tab exposes.
@@ -299,7 +299,7 @@ mod tests {
     use super::*;
     use arrow_array::{Int64Array, RecordBatch};
     use arrow_schema::{DataType, Field, Schema};
-    use rowglide_app::Sort;
+    use rowglide_core::Sort;
     use std::sync::Arc;
 
     /// Construct a minimal one-row source tab for pure state tests without GPUI setup.

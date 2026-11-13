@@ -5666,8 +5666,8 @@ dependencies = [
 name = "rowglide-app"
 version = "0.1.0"
 dependencies = [
- "arrow-array",
- "arrow-schema",
+ "rowglide-core",
+ "rowglide-ui",
 ]
 
 [[package]]
@@ -5677,7 +5677,6 @@ dependencies = [
  "arrow-array",
  "arrow-schema",
  "duckdb",
- "rowglide-app",
  "sqlparser",
  "tempfile",
 ]
@@ -5690,7 +5689,6 @@ dependencies = [
  "arrow-cast",
  "arrow-schema",
  "gpui-kit",
- "rowglide-app",
  "rowglide-core",
 ]
 

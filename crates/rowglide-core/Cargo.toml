@@ -9,7 +9,6 @@ publish.workspace = true
 duckdb.workspace = true
 tempfile.workspace = true
 sqlparser.workspace = true
-rowglide-app.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true
 

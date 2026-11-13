@@ -1,13 +1,13 @@
 //! Bounded Arrow transport; cursor ownership controls worker lifetime.
 
-use crate::{
+use super::{
     engine::{self, FileSource},
     sql,
 };
+use crate::{BatchCursor, Cancellation, Query, QueryError};
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use duckdb::{Connection, params_from_iter};
-use rowglide_app::{BatchCursor, Cancellation, Query, QueryError};
 use std::{
     sync::{
         Arc, Mutex,
@@ -22,7 +22,7 @@ use std::{
 ///
 /// Once cancellation is requested, repeated interrupts cover races between query
 /// preparation and execution. Dropping the monitor stops and joins its thread.
-pub(crate) struct Interrupt {
+pub(super) struct Interrupt {
     /// Separate monitor-shutdown flag; does not change the request cancellation token.
     stop: Arc<AtomicBool>,
     /// Owned monitor thread, taken and joined exactly once during drop.
@@ -35,7 +35,7 @@ impl Interrupt {
     /// The monitor owns an interrupt handle, not the connection. Returns a backend
     /// error if its thread cannot be created; its lifetime should stay within that of
     /// the query's connection.
-    pub(crate) fn new(conn: &Connection, cancel: Cancellation) -> Result<Self, QueryError> {
+    pub(super) fn new(conn: &Connection, cancel: Cancellation) -> Result<Self, QueryError> {
         let handle = conn.interrupt_handle();
         let stop = Arc::new(AtomicBool::new(false));
         let done = stop.clone();
@@ -179,7 +179,7 @@ impl Drop for Cursor {
 /// Returns an owned cursor only after schema arrival; thread creation, cancellation
 /// and startup failures propagate after cleanup. The caller must run in background
 /// because waiting for schema and dropping a failed cursor can block.
-pub(crate) fn start(
+pub(super) fn start(
     file: FileSource,
     query: Query,
     cancel: Cancellation,

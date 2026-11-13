@@ -17,7 +17,7 @@ categories = ["visualization", "gui"]
 publish = false
 
 [workspace.dependencies]
-rowglide-app = { path = "crates/rowglide-app" }
+rowglide-ui = { path = "crates/rowglide-ui" }
 rowglide-core = { path = "crates/rowglide-core" }
 
 gpui-kit = "=0.9.1"

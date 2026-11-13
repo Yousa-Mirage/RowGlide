@@ -9,7 +9,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use rowglide_app::{BrowsePage, Query};
+use rowglide_core::{BrowsePage, Query};
 
 impl Workspace {
     /// Build Folder Tabs for registered sources and select the active file.

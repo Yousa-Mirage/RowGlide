@@ -3,7 +3,7 @@
 use super::{Workspace, state::TabState};
 use gpui_kit::component::{Sizable, button::Button};
 use gpui_kit::*;
-use rowglide_app::Cancellation;
+use rowglide_core::Cancellation;
 
 impl Workspace {
     /// Build the shared Open files button and wire it to native path selection.

@@ -1,15 +1,15 @@
 //! SQL validation and parameterized browse queries.
 
+use crate::{Query, QueryError};
 use arrow_schema::{DataType, Schema};
 use duckdb::types::Value;
-use rowglide_app::{Query, QueryError};
 use sqlparser::{ast::Statement, dialect::DuckDbDialect, parser::Parser};
 
 /// Quote one SQL identifier, doubling embedded double quotes.
 ///
 /// The result is suitable for a column name, not a literal value or a SQL fragment;
 /// filter values continue to use bound parameters.
-pub(crate) fn identifier(name: &str) -> String {
+pub(super) fn identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
@@ -23,7 +23,7 @@ pub(crate) fn identifier(name: &str) -> String {
 /// Returns errors for invalid SQL, unsupported statement shapes, missing sort
 /// columns or ranges outside signed 64-bit integers. This validator is not a
 /// sandbox for untrusted SQL; DuckDB remains the execution authority.
-pub(crate) fn build(query: &Query, schema: &Schema) -> Result<(String, Vec<Value>), QueryError> {
+pub(super) fn build(query: &Query, schema: &Schema) -> Result<(String, Vec<Value>), QueryError> {
     if let Some(sql) = &query.sql {
         let statements = Parser::parse_sql(&DuckDbDialect {}, sql)
             .map_err(|error| QueryError::Invalid(error.to_string()))?;

@@ -3,7 +3,7 @@
 use super::state::{BrowseDraft, PageSummary, RequestKey};
 use super::{TabMode, Workspace};
 use gpui_kit::*;
-use rowglide_app::{BrowsePage, Cancellation, Preview};
+use rowglide_core::{BrowsePage, Cancellation, Preview};
 use std::time::Instant;
 
 impl Workspace {

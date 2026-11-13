@@ -7,7 +7,7 @@ use gpui_kit::component::{
     table::{Column, ColumnSort, TableDelegate, TableState},
 };
 use gpui_kit::*;
-use rowglide_app::{Preview, Sort};
+use rowglide_core::{Preview, Sort};
 
 /// Column-header event requesting a new global Browse sort.
 ///

@@ -1,11 +1,11 @@
 //! Deterministic, typed demo data. No files are read and no SQL engine is embedded.
 
+use crate::{Backend, BatchCursor, Cancellation, Query, QueryError, Source};
 use arrow_array::{
     ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch, StringArray, StructArray,
     builder::{ListBuilder, StringBuilder},
 };
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
-use rowglide_app::{Backend, BatchCursor, Cancellation, Query, QueryError, Source};
 use std::sync::Arc;
 
 /// Supported demo statement returning at most the first 100 selected fixture rows.
@@ -325,7 +325,7 @@ impl BatchCursor for MockCursor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rowglide_app::{Preview, Sort};
+    use crate::{Preview, Sort};
 
     /// Verify that Browse ranges follow global filtering/sorting and SQL ignores them.
     ///
