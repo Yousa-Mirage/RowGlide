@@ -9,9 +9,21 @@ impl Workspace {
     /// Sample only this process once per second on a background executor.
     /// Reuse the system snapshot and allow at most one sample in flight. The owned
     /// task stops with the workspace; unavailable readings replace stale values.
+    /// Initialization also runs in the background; failure leaves the unavailable
+    /// label in place and is logged without affecting query execution.
     pub(super) fn watch_memory(cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |this, cx| {
-            let mut system = System::new();
+            let mut system = match cx
+                .background_executor()
+                .spawn(async { System::new() })
+                .await
+            {
+                Ok(system) => system,
+                Err(error) => {
+                    eprintln!("Cannot initialize memory monitoring: {error}");
+                    return;
+                }
+            };
             loop {
                 let (updated, bytes) = cx
                     .background_executor()
@@ -61,7 +73,8 @@ fn sample(system: &mut System) -> Option<u64> {
     let pid = Pid::from_u32(std::process::id());
     let refreshed = system.refresh_processes_specifics(
         ProcessesToUpdate::Some(&[pid]),
-        ProcessRefreshKind::new().with_memory(),
+        true,
+        ProcessRefreshKind::nothing().with_memory().without_tasks(),
     );
     if refreshed == 0 {
         return None;
@@ -75,21 +88,22 @@ fn sample(system: &mut System) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::sample;
-    use sysinfo::{IS_SUPPORTED_SYSTEM, Pid, System};
+    use sysinfo::{Pid, System};
 
     /// Repeated sampling reads live memory and keeps only this process in the snapshot.
     #[test]
-    fn samples_current_process_only() {
-        let mut system = System::new();
+    fn samples_current_process_only() -> Result<(), sysinfo::Error> {
+        let mut system = match System::new() {
+            Ok(system) => system,
+            Err(sysinfo::Error::Unsupported) => return Ok(()),
+            Err(error) => return Err(error),
+        };
         for _ in 0..2 {
             let bytes = sample(&mut system);
-            if IS_SUPPORTED_SYSTEM {
-                assert!(bytes.is_some_and(|bytes| bytes > 0));
-                assert_eq!(system.processes().len(), 1);
-                assert!(system.process(Pid::from_u32(std::process::id())).is_some());
-            } else {
-                assert!(bytes.is_none());
-            }
+            assert!(bytes.is_some_and(|bytes| bytes > 0));
+            assert_eq!(system.processes().len(), 1);
+            assert!(system.process(Pid::from_u32(std::process::id())).is_some());
         }
+        Ok(())
     }
 }

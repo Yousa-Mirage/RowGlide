@@ -133,6 +133,8 @@ Table rendering and cell helpers remain independent of workspace coordination.
 Core uses `thiserror` for `QueryError`. Arrow, I/O, DuckDB and SQL parsing
 failures retain typed causes; cache I/O also keeps its storage context. Cancellation
 remains distinct from failure. UI status snapshots format errors for display.
+Workspace dependencies use `thiserror 2`, `dirs 7` and `sysinfo 0.40`. Older
+versions may coexist in Cargo.lock when required by upstream dependencies.
 
 ## Checks
 
