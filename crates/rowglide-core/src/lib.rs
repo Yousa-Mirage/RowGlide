@@ -15,3 +15,6 @@ pub use duckdb::DuckDbBackend;
 pub use mock::{EMPTY_SQL, MockBackend, PREVIEW_SQL};
 pub use model::{Preview, Query, Sort, Source};
 pub use pagination::{BrowsePage, PageResult};
+
+mod session;
+pub use session::{QuerySession, SessionEvent};
