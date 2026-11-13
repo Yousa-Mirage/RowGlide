@@ -17,6 +17,7 @@ pub struct Source {
     pub description: &'static str,
 }
 
+/// Sorting request
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sort {
     pub column: usize,

@@ -19,6 +19,7 @@ publish = false
 [workspace.dependencies]
 rowglide-app = { path = "crates/rowglide-app" }
 rowglide-core = { path = "crates/rowglide-core" }
+
 gpui-kit = "=0.9.1"
 duckdb = { version = "=1.20000.1", features = ["bundled", "parquet"] }
 arrow-cast = "60"
@@ -27,6 +28,7 @@ sqlparser = "=0.64.0"
 arrow-array = "60"
 arrow-schema = "60"
 
+# Lint configuration
 [workspace.lints.rust]
 unsafe_code = "forbid"
 unused_qualifications = "deny"
@@ -36,6 +38,7 @@ unreachable_pub = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 
+# Build configuration
 [profile.dev]
 debug = 0
 
