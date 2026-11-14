@@ -117,7 +117,7 @@ fn cache_read_failure_is_not_success() -> Result<(), QueryError> {
 }
 
 /// Wait for a terminal phase with a deadline so worker regressions fail instead of hang.
-fn finished(result: &QueryResult) -> Result<ResultSnapshot, QueryError> {
+pub(super) fn finished(result: &QueryResult) -> Result<ResultSnapshot, QueryError> {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let snapshot = result.snapshot();

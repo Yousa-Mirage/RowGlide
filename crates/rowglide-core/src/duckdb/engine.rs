@@ -6,10 +6,11 @@ use arrow_schema::SchemaRef;
 use duckdb::{Config, Connection};
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard, TryLockError},
+    sync::{Arc, Mutex, MutexGuard},
     thread,
-    time::Duration,
 };
+
+use tokio::sync::{Semaphore, SemaphorePermit};
 
 /// Registered local file metadata plus the schema obtained during inspection.
 ///
@@ -30,12 +31,21 @@ pub(super) struct FileSource {
 /// Registration and execution share one engine gate, limiting concurrent engine
 /// budgets. Every query opens its own in-memory connection and scans the source
 /// file directly; the registry holds neither result buffers nor live GUI objects.
-#[derive(Default)]
 pub struct DuckDbBackend {
     /// Registered sources; vector indices are their backend-local IDs.
     files: Mutex<Vec<FileSource>>,
     /// Serializes inspection and execution so requests cannot multiply engine budgets.
-    gate: Arc<Mutex<()>>,
+    gate: Arc<Semaphore>,
+}
+
+impl Default for DuckDbBackend {
+    /// Create an empty registry with one fair, asynchronously awaited engine permit.
+    fn default() -> Self {
+        Self {
+            files: Mutex::new(Vec::new()),
+            gate: Arc::new(Semaphore::new(1)),
+        }
+    }
 }
 
 impl DuckDbBackend {
@@ -84,25 +94,29 @@ pub(super) fn register(conn: &Connection, path: &Path, format: &str) -> Result<(
     }
 }
 
-/// Wait for exclusive engine access while checking cancellation between attempts.
-///
-/// Uses short sleeps rather than an uninterruptible mutex lock. Returns a guard
-/// that keeps the engine reserved, or an error for cancellation or a poisoned gate.
-/// Call only from background work.
-pub(super) fn lock_engine<'a>(
-    gate: &'a Mutex<()>,
+/// Await FIFO engine admission or cancellation without opening a connection while queued.
+/// A cancellation observed alongside acquisition wins, and drops any acquired permit.
+/// All inspection, metadata and query execution use the same single permit.
+async fn acquire_engine<'a>(
+    gate: &'a Semaphore,
     cancel: &Cancellation,
-) -> Result<MutexGuard<'a, ()>, QueryError> {
-    loop {
-        cancel.check()?;
-        match gate.try_lock() {
-            Ok(guard) => return Ok(guard),
-            Err(TryLockError::Poisoned(_)) => {
-                return Err(QueryError::Backend("Query worker failed".into()));
-            }
-            Err(TryLockError::WouldBlock) => thread::sleep(Duration::from_millis(10)),
-        }
-    }
+) -> Result<SemaphorePermit<'a>, QueryError> {
+    let permit = cancel
+        .until_cancelled(gate.acquire())
+        .await?
+        .map_err(|_| QueryError::Backend("Engine admission queue closed".into()))?;
+    cancel.check()?;
+    Ok(permit)
+}
+
+/// Bridge the synchronous backend contract to event-driven engine admission.
+/// Call only from existing background workers: the thread parks while Tokio's
+/// semaphore awaits a permit or cancellation; no timer or Tokio runtime is needed.
+pub(super) fn lock_engine<'a>(
+    gate: &'a Semaphore,
+    cancel: &Cancellation,
+) -> Result<SemaphorePermit<'a>, QueryError> {
+    futures_lite::future::block_on(acquire_engine(gate, cancel))
 }
 
 impl Backend for DuckDbBackend {
@@ -234,5 +248,70 @@ impl Backend for DuckDbBackend {
             .cloned()
             .ok_or_else(|| QueryError::Invalid("File is no longer available".into()))?;
         stream::start(file, query, cancel, self.gate.clone())
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::acquire_engine;
+    use crate::{Cancellation, QueryError};
+    use std::{
+        future::Future,
+        pin::pin,
+        task::{Context, Poll, Waker},
+    };
+    use tokio::sync::Semaphore;
+
+    /// Queue order is FIFO, a cancelled head releases its place, and permits return on drop.
+    #[test]
+    fn queued_cancellation_preserves_fifo_and_permits() -> Result<(), QueryError> {
+        let gate = Semaphore::new(1);
+        let owner_cancel = Cancellation::default();
+        let owner = futures_lite::future::block_on(acquire_engine(&gate, &owner_cancel))?;
+        let cancelled = Cancellation::default();
+        let later = Cancellation::default();
+        let mut first = pin!(acquire_engine(&gate, &cancelled));
+        let mut second = pin!(acquire_engine(&gate, &later));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(first.as_mut().poll(&mut cx).is_pending());
+        assert!(second.as_mut().poll(&mut cx).is_pending());
+        cancelled.cancel();
+        assert!(matches!(
+            first.as_mut().poll(&mut cx),
+            Poll::Ready(Err(QueryError::Cancelled))
+        ));
+        assert!(second.as_mut().poll(&mut cx).is_pending());
+        drop(owner);
+        let next = futures_lite::future::block_on(second)?;
+        assert_eq!(gate.available_permits(), 0);
+        drop(next);
+        assert_eq!(gate.available_permits(), 1);
+        assert!(matches!(
+            futures_lite::future::block_on(acquire_engine(&gate, &cancelled)),
+            Err(QueryError::Cancelled)
+        ));
+        assert_eq!(gate.available_permits(), 1);
+        Ok(())
+    }
+
+    /// An available permit is reserved for the oldest live waiter even if a newer one polls first.
+    #[test]
+    fn admission_does_not_overtake_older_waiter() -> Result<(), QueryError> {
+        let gate = Semaphore::new(1);
+        let cancel = Cancellation::default();
+        let owner = futures_lite::future::block_on(acquire_engine(&gate, &cancel))?;
+        let mut first = pin!(acquire_engine(&gate, &cancel));
+        let mut second = pin!(acquire_engine(&gate, &cancel));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(first.as_mut().poll(&mut cx).is_pending());
+        assert!(second.as_mut().poll(&mut cx).is_pending());
+        drop(owner);
+        assert!(second.as_mut().poll(&mut cx).is_pending());
+        let first = futures_lite::future::block_on(first)?;
+        assert!(second.as_mut().poll(&mut cx).is_pending());
+        drop(first);
+        drop(futures_lite::future::block_on(second)?);
+        assert_eq!(gate.available_permits(), 1);
+        Ok(())
     }
 }

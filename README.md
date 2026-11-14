@@ -41,7 +41,7 @@ and numeric precision; it never copies the truncated display summary. Metadata's
 - Unsupported types and duplicate struct field names produce an explicit error.
 
 Serialization runs off the GUI thread, with a 16 MiB output limit and maximum
-nesting depth of 64. SQL cache misses are reread asynchronously, with a 30-second
+nesting depth of 64. SQL cache misses await a dedicated batch reply, with a 30-second
 copy timeout. Menus retain the original target across tab/query changes. A new
 copy cancels the previous copy; closing the workspace cancels pending work.
 Failure leaves the clipboard unchanged. Copy progress and errors appear separately
@@ -257,38 +257,41 @@ inspector: double-clicking a data cell opens the inspector. A single click only
 changes the table selection.
 
 
-## Async coordination roadmap
+## Async coordination
 
-Core explicitly depends on Tokio with only `sync` enabled and tokio-util 0.7.20
-with default features disabled. The lockfile already
-contained Tokio 1.54.1 through platform-specific dependencies; this declaration
-also makes it a direct dependency in native builds. The bounded SQL cache-read request queue now uses Tokio `mpsc`; its dedicated
-reader waits with `blocking_recv` instead of waking every 20 ms. Dropping the last
-result owner closes the sole sender and wakes the reader; queued reads check the
-shutdown token before disk access. Other task execution and channels are unchanged.
-The application does not yet create a Tokio runtime.
+Core uses Tokio `sync` and `macros`, plus tokio-util's `CancellationToken`.
+UI futures continue to run on GPUI. No Tokio runtime is created: synchronization
+and `select!` are runtime-independent, while UI deadlines use GPUI timers.
+The existing synchronous backend workers use `futures-lite::block_on` as a bridge
+to these waits. Waiting threads park instead of repeatedly sleeping; blocking
+DuckDB, disk decoding and serialization remain outside the GUI thread.
 
-The first proposed migration is result notifications and cache-read completion:
-use `watch` for independently subscribed progress/revision updates, and bounded
-read requests with `oneshot` replies for explicit awaited reads. This would let
-copying wait for the requested batch instead of polling every 25 ms. These
-synchronization primitives can be awaited by GPUI tasks without a Tokio runtime;
-Tokio timer-dependent operations require a runtime and are not enabled here.
+- **Independent result subscriptions:** `QueryResult::subscribe()` returns a
+  `ResultUpdates` observer. Each observer coalesces changes independently, including
+  cache-only changes after query completion. Subscribe before taking a snapshot.
+  Releasing the result wakes subscriptions with an explicit closed status.
+- **Awaited cache reads:** `row()` stays nonblocking for virtualized rendering.
+  `row_async()` returns a specific original batch through a `oneshot` reply; copying
+  no longer polls every 25 ms. Requests share a capacity-eight queue and duplicate
+  batch requests share one read. At most eight explicit waits per result may be
+  active; excess requests fail clearly. Replies retain their batch across eviction.
+  Read errors preserve their typed cause and finish all queued waiters.
+- **Cancellation:** `Cancellation::until_cancelled()` races an operation against
+  cancellation. Cancelling or dropping a copy wait releases its admission slot and
+  reply without cancelling the query. Generation cancellation leaves retained
+  partial results readable; result disposal cancels remaining read waits. Already
+  running synchronous disk decoding finishes at its normal cancellation boundaries.
+- **Engine admission:** a single FIFO `Semaphore` covers file inspection, metadata
+  and data queries. Cancelled requests leave the queue without opening a connection
+  or borrowing another query's interrupt handle. Synchronous backend workers remain
+  allocated while waiting; this change removes polling, not those workers.
+- **Transport and interruption:** bounded stream/session sends and cursor receives
+  wait for capacity/data or cancellation without timer polling. Explicit EOF/error
+  events and receiver-drop cleanup remain intact. The DuckDB monitor sleeps until
+  cancellation or disposal; after cancellation it repeats interrupts every 10 ms
+  until disposal to cover prepare/execute races.
 
-The shared `Cancellation` wrapper now uses `tokio_util::sync::CancellationToken`.
-Existing `cancel()` / `check()` behavior is preserved; `cancelled().await` lets
-future integrations wait for cancellation without polling or a Tokio runtime.
-Existing engine-interrupt and transport polling loops have not yet migrated.
-
-Later migrations may address cancellable engine admission and background cleanup
-scheduling. Preserve bounded queues, explicit terminal
-states, partial results and resource accounting throughout. `watch` is for
-coalescible state, never the lossless Arrow batch stream. Keep ordinary short
-metadata locks synchronous and all GUI mutations on the GPUI thread.
-
-If runtime services become necessary, app should own one runtime and inject the
-required service/handle. Blocking DuckDB and Arrow IPC work must remain on
-blocking workers; starting a Tokio task does not make synchronous work nonblocking.
-Long-lived workers should not be mechanically moved into `spawn_blocking`.
-Already-running blocking work still needs cooperative cancellation and DuckDB
-interrupts; a timeout alone does not release its resources.
+Result budgets, file leases and successful-delete accounting remain unchanged.
+Ordinary short metadata locks stay synchronous and are never held across `await`.
+If a future feature needs Tokio runtime services, app should own and inject that
+runtime; no runtime-dependent timeout or spawn API is used on GPUI tasks here.

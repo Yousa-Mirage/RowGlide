@@ -37,7 +37,7 @@ impl Default for CopyLimits {
 /// Copy-specific failures, kept separate from query execution state.
 #[derive(Debug, thiserror::Error)]
 pub enum CopyError {
-    /// Cancellation preserves the shared query cancellation cause.
+    /// Query cancellation or cache-read failure, preserving its shared typed cause.
     #[error(transparent)]
     Query(#[from] crate::QueryError),
     /// Cancellation, output limit, or malformed input prevented a complete value.

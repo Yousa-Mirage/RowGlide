@@ -1,5 +1,7 @@
 //! Memory-first SQL results with shared budgets, incremental spill and asynchronous rereads.
 
+#[cfg(test)]
+mod async_tests;
 mod budget;
 mod disk;
 mod store;
@@ -13,9 +15,8 @@ pub use store::ResultStore;
 use crate::{Backend, Cancellation, Query, QueryError, QuerySession, SessionEvent};
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
-use async_channel::{Receiver, Sender};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{
         Arc, Mutex, MutexGuard,
         atomic::{AtomicU64, Ordering},
@@ -23,7 +24,30 @@ use std::{
     thread,
 };
 
-use tokio::sync::mpsc;
+use tokio::sync::{Semaphore, mpsc, watch};
+
+mod reads;
+use reads::PendingRead;
+
+/// Independent coalescing subscription; it does not retain result files or worker state.
+pub struct ResultUpdates {
+    /// Each observer tracks its own unseen progress and cache changes.
+    updates: watch::Receiver<()>,
+    /// Result disposal ends observation even if blocking cleanup has not finished.
+    shutdown: Cancellation,
+}
+
+impl ResultUpdates {
+    /// Wait for a change, returning false when the owning result has been released.
+    /// Subscribe before reading a snapshot to avoid missing concurrent updates.
+    /// Cache reads also notify, even when row count and execution phase are unchanged.
+    pub async fn changed(&mut self) -> bool {
+        matches!(
+            self.shutdown.until_cancelled(self.updates.changed()).await,
+            Ok(Ok(()))
+        )
+    }
+}
 
 /// Resource limits for one retained SQL result, separate from DuckDB's execution budget.
 #[derive(Clone, Copy)]
@@ -99,11 +123,11 @@ struct State {
     /// Constant-time batch lookup; worker reclamation uses each entry's access stamp.
     cache: HashMap<usize, CachedBatch>,
     /// At most eight queued reads plus one in-progress read, deduplicated by segment index.
-    pending: HashSet<usize>,
+    pending: HashMap<usize, PendingRead>,
     /// Shared file lifetime, initialized lazily during worker-driven spill.
     disk: Option<Arc<disk::Disk>>,
     /// A failed read prevents repeated attempts from causing a render/error loop.
-    read_failed: bool,
+    read_error: Option<Arc<QueryError>>,
     /// New batches go directly to disk after the first memory-pressure spill.
     disk_mode: bool,
     /// Prevent retries after a partial write; existing memory-only rows remain intact.
@@ -114,8 +138,8 @@ struct State {
 struct Shared {
     /// Short critical sections around metadata and cache references.
     state: Mutex<State>,
-    /// Coalesced notifications; a capacity-one channel cannot accumulate progress events.
-    updates: Sender<()>,
+    /// Coalesced revision notifications with independent observer cursors and no event backlog.
+    updates: watch::Sender<()>,
     /// Execution cancellation; partial results remain readable afterward.
     cancel: Cancellation,
     /// Separate lifetime token for stopping cache reads when the result is released.
@@ -146,9 +170,9 @@ impl Shared {
         self.state.lock().unwrap_or_else(|error| error.into_inner())
     }
 
-    /// Wake the UI once; a pending wake already covers newer metadata changes.
+    /// Wake every observer; each independently coalesces changes until it next polls.
     fn notify(&self) {
-        let _ = self.updates.try_send(());
+        self.updates.send_replace(());
     }
 
     /// Publish a terminal state without overwriting an earlier cancel or storage failure.
@@ -171,8 +195,8 @@ impl Shared {
 pub struct QueryResult {
     /// Metadata and worker state retained until all operations have finished.
     shared: Arc<Shared>,
-    /// GUI-facing coalesced update receiver; one active consumer per result.
-    updates: Receiver<()>,
+    /// Bounds explicit awaiting readers; excess requests fail instead of accumulating.
+    read_waiters: Semaphore,
     /// Sole sender for bounded disk-read requests; dropping it wakes the idle reader.
     reads: mpsc::Sender<usize>,
 }
@@ -192,7 +216,7 @@ impl QueryResult {
         if limits.memory_bytes == 0 || limits.disk_bytes == 0 || limits.batches == 0 {
             return Err(disk::error("Result budgets must be positive"));
         }
-        let (updates_tx, updates) = async_channel::bounded(1);
+        let (updates_tx, _) = watch::channel(());
         let shared = Arc::new(Shared {
             state: Mutex::new(State {
                 snapshot: ResultSnapshot {
@@ -204,9 +228,9 @@ impl QueryResult {
                 },
                 segments: Vec::new(),
                 cache: HashMap::new(),
-                pending: HashSet::new(),
+                pending: HashMap::new(),
                 disk: None,
-                read_failed: false,
+                read_error: None,
                 disk_mode: false,
                 spill_failed: false,
             }),
@@ -222,7 +246,7 @@ impl QueryResult {
         let (reads, receiver) = mpsc::channel(8);
         let result = Self {
             shared: shared.clone(),
-            updates,
+            read_waiters: Semaphore::new(8),
             reads,
         };
         let reader = shared.clone();
@@ -248,10 +272,14 @@ impl QueryResult {
         self.shared.state().snapshot.clone()
     }
 
-    /// Await a coalesced progress/cache notification on the existing GUI executor.
-    /// Continues after execution finishes because scrolling can still request disk reads.
-    pub async fn changed(&self) {
-        let _ = self.updates.recv().await;
+    /// Subscribe independently to future progress and cache changes, without retaining data.
+    /// Call before taking the first snapshot; slow observers coalesce updates without
+    /// consuming another observer's notification. Completion does not close cache updates.
+    pub fn subscribe(&self) -> ResultUpdates {
+        ResultUpdates {
+            updates: self.shared.updates.subscribe(),
+            shutdown: self.shared.shutdown.clone(),
+        }
     }
 
     /// Cancel further generation while retaining committed rows for inspection.
@@ -280,12 +308,18 @@ impl QueryResult {
             entry.touched = self.shared.store.tick();
             return Some((entry.batch.clone(), row - segment.start));
         }
-        if segment.persisted
-            && !state.read_failed
-            && !state.pending.contains(&index)
-            && self.reads.try_send(index).is_ok()
-        {
-            state.pending.insert(index);
+        if segment.persisted && state.read_error.is_none() {
+            if let Some(pending) = state.pending.get_mut(&index) {
+                pending.visible = true;
+            } else if self.reads.try_send(index).is_ok() {
+                state.pending.insert(
+                    index,
+                    PendingRead {
+                        visible: true,
+                        replies: Vec::new(),
+                    },
+                );
+            }
         }
         None
     }
@@ -296,7 +330,6 @@ impl Drop for QueryResult {
     fn drop(&mut self) {
         self.shared.cancel.cancel();
         self.shared.shutdown.cancel();
-        self.updates.close();
     }
 }
 
@@ -360,27 +393,14 @@ fn write_result(
     }
 }
 
-/// Decode committed batches on a dedicated thread and wake the UI afterward.
-/// Wait without polling while idle. Dropping QueryResult closes the sole sender;
-/// its shutdown token prevents queued requests from starting further disk reads.
-/// Tokio's blocking receive needs no runtime and must never run on the GUI thread.
+/// Decode requested batches on the dedicated reader; shutdown interrupts idle waiting.
+/// Decoding remains synchronous and bounded. Completion replies retain the exact batch
+/// even if another worker evicts its cache entry before the waiting task resumes.
 fn read_worker(shared: Arc<Shared>, mut receiver: mpsc::Receiver<usize>) {
-    while let Some(index) = receiver.blocking_recv() {
-        if shared.shutdown.check().is_err() {
-            break;
-        }
-        let result = shared.store.read(&shared, index);
-        if shared.shutdown.check().is_err() {
-            break;
-        }
-        let mut state = shared.state();
-        state.pending.remove(&index);
-        if let Err(error) = result {
-            state.read_failed = true;
-            state.snapshot.phase = ResultPhase::Failed(error.to_string());
-            shared.cancel.cancel();
-        }
-        drop(state);
-        shared.notify();
+    while let Ok(Some(index)) =
+        futures_lite::future::block_on(shared.shutdown.until_cancelled(receiver.recv()))
+    {
+        reads::complete(&shared, index);
     }
+    reads::fail_pending(&shared, Arc::new(QueryError::Cancelled));
 }

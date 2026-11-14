@@ -3,8 +3,8 @@
 use crate::{Backend, Cancellation, Query, QueryError};
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
-use async_channel::{Receiver, Sender, TrySendError};
-use std::{sync::Arc, thread, time::Duration};
+use async_channel::{Receiver, Sender};
+use std::{sync::Arc, thread};
 
 /// Ordered events from one query; successful completion is never inferred from disconnect.
 pub enum SessionEvent {
@@ -79,26 +79,21 @@ impl Drop for QuerySession {
     }
 }
 
-/// Deliver with bounded backpressure, checking cancellation while the receiver is slow.
-/// Terminal events omit cancellation checks so a live consumer can observe cancellation.
+/// Wait for transport capacity or cancellation without polling the full channel.
+/// Terminal delivery ignores request cancellation so a live consumer can observe failure;
+/// receiver disposal still wakes and releases the producer. Runs only on worker threads.
 fn deliver(
     sender: &Sender<SessionEvent>,
-    mut event: SessionEvent,
+    event: SessionEvent,
     cancel: Option<&Cancellation>,
 ) -> Result<(), QueryError> {
-    loop {
-        if let Some(cancel) = cancel {
-            cancel.check()?;
-        }
-        match sender.try_send(event) {
-            Ok(()) => return Ok(()),
-            Err(TrySendError::Closed(_)) => return Err(QueryError::Cancelled),
-            Err(TrySendError::Full(value)) => {
-                event = value;
-                thread::sleep(Duration::from_millis(5));
-            }
-        }
-    }
+    let send = sender.send(event);
+    let result = if let Some(cancel) = cancel {
+        futures_lite::future::block_on(cancel.until_cancelled(send))?
+    } else {
+        futures_lite::future::block_on(send)
+    };
+    result.map_err(|_| QueryError::Cancelled)
 }
 
 /// Pull batches on the worker and drop the cursor before reporting its terminal state.

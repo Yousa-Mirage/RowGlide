@@ -3,7 +3,7 @@
 use crate::{Query, Source};
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
-use std::path::Path;
+use std::{future::Future, path::Path, sync::Arc};
 use tokio_util::sync::CancellationToken;
 
 /// Cloneable, one-way cancellation signal shared by a request and its workers.
@@ -30,6 +30,17 @@ impl Cancellation {
     /// of worker cleanup; engine-specific interruption remains the worker's responsibility.
     pub async fn cancelled(&self) {
         self.0.cancelled().await;
+    }
+
+    /// Await an operation or return cancellation, preferring cancellation when both are ready.
+    /// Dropping the losing future does not undo external work it has already started;
+    /// callers must retain their normal resource cleanup and engine interruption.
+    pub async fn until_cancelled<F: Future>(&self, operation: F) -> Result<F::Output, QueryError> {
+        tokio::select! {
+            biased;
+            _ = self.cancelled() => Err(QueryError::Cancelled),
+            value = operation => Ok(value),
+        }
     }
 
     /// Return `Cancelled` if shutdown was requested, otherwise return success.
@@ -73,6 +84,9 @@ pub enum QueryError {
     /// Temporary result storage failed; retains the I/O error and cache context.
     #[error("Result cache: {0}")]
     CacheIo(#[source] std::io::Error),
+    /// Shared cache-read failure delivered to multiple waiters without losing its source.
+    #[error("Cache read failed: {0}")]
+    CacheRead(#[source] Arc<QueryError>),
     /// Application-generated backend, resource-budget or synchronization failure.
     /// External errors with an owned typed cause should use a source-bearing variant.
     #[error("{0}")]

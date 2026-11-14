@@ -62,6 +62,12 @@ impl ResultStore {
         self.gate.lock().unwrap_or_else(|error| error.into_inner())
     }
 
+    /// Hold disk work at a deterministic boundary for cancellation and deduplication tests.
+    #[cfg(test)]
+    pub(super) fn pause_io(&self) -> MutexGuard<'_, ()> {
+        self.lock()
+    }
+
     /// Snapshot live results in least-recently-accessed order without retaining registry locks.
     fn candidates(&self) -> Vec<Arc<Shared>> {
         let mut entries = self
@@ -262,22 +268,21 @@ impl ResultStore {
     }
 
     /// Decode one missing segment and reserve cache ownership under the worker gate.
+    /// Returns an owned shallow batch clone so callers remain safe against later eviction.
     /// Execution cancellation does not prevent browsing retained partial results.
-    pub(super) fn read(&self, shared: &Shared, index: usize) -> Result<(), QueryError> {
+    pub(super) fn read(&self, shared: &Shared, index: usize) -> Result<RecordBatch, QueryError> {
         let _gate = self.lock();
         shared.shutdown.check()?;
         let source = {
             let state = shared.state();
-            if state.cache.contains_key(&index) {
-                return Ok(());
+            if let Some(entry) = state.cache.get(&index) {
+                return Ok(entry.batch.clone());
             }
             state.disk.clone().zip(state.segments.get(index).copied())
         };
-        let Some((disk, segment)) = source else {
-            return Ok(());
-        };
+        let (disk, segment) = source.ok_or_else(|| disk::error("Missing cache segment"))?;
         if !segment.persisted {
-            return Ok(());
+            return Err(disk::error("Missing retained batch"));
         }
         let batch = disk.read(segment.offset, segment.length)?;
         let charge = self.reserve(shared, buffer_bytes(&batch), false)?;
@@ -300,11 +305,11 @@ impl ResultStore {
         state.cache.insert(
             index,
             CachedBatch {
-                batch,
+                batch: batch.clone(),
                 charge,
                 touched: self.tick(),
             },
         );
-        Ok(())
+        Ok(batch)
     }
 }

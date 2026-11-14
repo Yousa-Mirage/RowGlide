@@ -12,6 +12,10 @@ gpui-kit.workspace = true
 arrow-array.workspace = true
 arrow-schema.workspace = true
 sysinfo.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+futures-lite.workspace = true

@@ -27,6 +27,7 @@ pub use session::{QuerySession, SessionEvent};
 mod result;
 pub use result::{
     CacheLimits, CacheUsage, QueryResult, ResultLimits, ResultPhase, ResultSnapshot, ResultStore,
+    ResultUpdates,
 };
 
 mod clipboard;

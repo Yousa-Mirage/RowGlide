@@ -7,16 +7,14 @@ use super::{
 use crate::{BatchCursor, Cancellation, Query, QueryError};
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
+use async_channel::{Receiver, Sender};
 use duckdb::{Connection, params_from_iter};
 use std::{
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, RecvTimeoutError, SyncSender},
-    },
+    sync::Arc,
     thread::{self, JoinHandle},
     time::Duration,
 };
+use tokio::sync::Semaphore;
 
 /// Owns a cancellation-monitor thread for one DuckDB connection.
 ///
@@ -24,29 +22,33 @@ use std::{
 /// preparation and execution. Dropping the monitor stops and joins its thread.
 pub(super) struct Interrupt {
     /// Separate monitor-shutdown flag; does not change the request cancellation token.
-    stop: Arc<AtomicBool>,
+    stop: Cancellation,
     /// Owned monitor thread, taken and joined exactly once during drop.
     worker: Option<JoinHandle<()>>,
 }
 
 impl Interrupt {
-    /// Start a monitor that checks cancellation and interrupts the connection every 10 ms.
+    /// Await cancellation without polling, then repeat interrupts every 10 ms until stopped.
     ///
     /// The monitor owns an interrupt handle, not the connection. Returns a backend
     /// error if its thread cannot be created; its lifetime should stay within that of
     /// the query's connection.
     pub(super) fn new(conn: &Connection, cancel: Cancellation) -> Result<Self, QueryError> {
         let handle = conn.interrupt_handle();
-        let stop = Arc::new(AtomicBool::new(false));
+        let stop = Cancellation::default();
         let done = stop.clone();
         let worker = thread::Builder::new()
             .name("duckdb-cancel".into())
             .spawn(move || {
-                while !done.load(Ordering::Acquire) {
-                    if cancel.check().is_err() {
-                        handle.interrupt();
-                    }
-                    thread::sleep(Duration::from_millis(10));
+                let requested =
+                    futures_lite::future::block_on(done.until_cancelled(cancel.cancelled()));
+                if requested.is_err() {
+                    return;
+                }
+                // Repeat only after cancellation to cover DuckDB prepare/execute races.
+                while done.check().is_ok() {
+                    handle.interrupt();
+                    thread::park_timeout(Duration::from_millis(10));
                 }
             })?;
         Ok(Self {
@@ -62,8 +64,9 @@ impl Drop for Interrupt {
     /// A thread panic is ignored during cleanup. Joining may briefly block, so the
     /// monitor is owned by background query work.
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Release);
+        self.stop.cancel();
         if let Some(worker) = self.worker.take() {
+            worker.thread().unpark();
             let _ = worker.join();
         }
     }
@@ -102,24 +105,13 @@ struct Cursor {
 }
 
 impl Cursor {
-    /// Wait for one protocol message, checking cancellation every 20 ms.
-    ///
-    /// Returns cancellation when the token is set or the receiver was removed. An
-    /// unexpected disconnect is a backend error, never successful EOF.
+    /// Wait for a protocol message or cancellation with no timed receive loop.
+    /// An unexpected disconnect remains an error, never successful EOF.
     fn receive(&self) -> Result<Message, QueryError> {
         let receiver = self.receiver.as_ref().ok_or(QueryError::Cancelled)?;
-        loop {
-            self.cancel.check()?;
-            match receiver.recv_timeout(Duration::from_millis(20)) {
-                Ok(message) => return Ok(message),
-                Err(RecvTimeoutError::Timeout) => continue,
-                Err(RecvTimeoutError::Disconnected) => {
-                    return Err(QueryError::Backend(
-                        "Query worker ended without a completion message".into(),
-                    ));
-                }
-            }
-        }
+        futures_lite::future::block_on(self.cancel.until_cancelled(receiver.recv()))?.map_err(
+            |_| QueryError::Backend("Query worker ended without a completion message".into()),
+        )
     }
 }
 
@@ -185,9 +177,9 @@ pub(super) fn start(
     file: FileSource,
     query: Query,
     cancel: Cancellation,
-    gate: Arc<Mutex<()>>,
+    gate: Arc<Semaphore>,
 ) -> Result<Box<dyn BatchCursor>, QueryError> {
-    let (sender, receiver) = mpsc::sync_channel(1);
+    let (sender, receiver) = async_channel::bounded(1);
     let token = cancel.clone();
     let worker = thread::Builder::new()
         .name("duckdb-query".into())
@@ -198,7 +190,7 @@ pub(super) fn start(
                 } else {
                     error
                 };
-                let _ = sender.send(Message::Error(error));
+                let _ = futures_lite::future::block_on(sender.send(Message::Error(error)));
             }
         })?;
     let mut cursor = Cursor {
@@ -229,8 +221,8 @@ fn produce(
     file: FileSource,
     query: Query,
     cancel: Cancellation,
-    gate: Arc<Mutex<()>>,
-    sender: &SyncSender<Message>,
+    gate: Arc<Semaphore>,
+    sender: &Sender<Message>,
 ) -> Result<(), QueryError> {
     let _guard = engine::lock_engine(&gate, &cancel)?;
     let temp = crate::temporary::Directory::create()?;
@@ -241,7 +233,7 @@ fn produce(
     cancel.check()?;
     let mut statement = conn.prepare(&sql)?;
     let batches = statement.stream_arrow(params_from_iter(params.iter()))?;
-    send(sender, Message::Schema(batches.get_schema()))?;
+    send(sender, Message::Schema(batches.get_schema()), &cancel)?;
     for batch in batches {
         cancel.check()?;
         let batch = batch?;
@@ -251,15 +243,20 @@ fn produce(
                 "A result batch exceeds the 16 MiB memory budget; reduce Limit or select smaller values".into(),
             ));
         }
-        send(sender, Message::Batch(batch))?;
+        send(sender, Message::Batch(batch), &cancel)?;
     }
-    send(sender, Message::End)
+    send(sender, Message::End, &cancel)
 }
 
 /// Send one protocol message with backpressure, treating a departed consumer as cancellation.
 /// Do not retain the failed send's payload; dropping it releases any Arrow buffers.
-fn send(sender: &SyncSender<Message>, message: Message) -> Result<(), QueryError> {
-    sender.send(message).map_err(|_| QueryError::Cancelled)
+fn send(
+    sender: &Sender<Message>,
+    message: Message,
+    cancel: &Cancellation,
+) -> Result<(), QueryError> {
+    futures_lite::future::block_on(cancel.until_cancelled(sender.send(message)))?
+        .map_err(|_| QueryError::Cancelled)
 }
 
 #[cfg(test)]
@@ -268,7 +265,7 @@ mod tests {
     use crate::{BatchCursor, Cancellation, QueryError};
     use arrow_array::RecordBatch;
     use arrow_schema::Schema;
-    use std::sync::{Arc, mpsc};
+    use std::sync::Arc;
 
     /// Losing the consumer is cancellation at every send stage, including schema and EOF.
     #[test]
@@ -279,16 +276,19 @@ mod tests {
             Message::Batch(RecordBatch::new_empty(schema)),
             Message::End,
         ] {
-            let (sender, receiver) = mpsc::sync_channel(1);
+            let (sender, receiver) = async_channel::bounded(1);
             drop(receiver);
-            assert!(matches!(send(&sender, message), Err(QueryError::Cancelled)));
+            assert!(matches!(
+                send(&sender, message, &Cancellation::default()),
+                Err(QueryError::Cancelled)
+            ));
         }
     }
 
     /// Losing the producer without a terminal event is a failure, never successful EOF.
     #[test]
     fn departed_producer_is_not_completion() {
-        let (sender, receiver) = mpsc::sync_channel(1);
+        let (sender, receiver) = async_channel::bounded(1);
         drop(sender);
         let mut cursor = Cursor {
             schema: Arc::new(Schema::empty()),

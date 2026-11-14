@@ -35,6 +35,7 @@ impl Workspace {
             return;
         };
         let request = self.request_key();
+        let mut updates = result.subscribe();
         self.task = Some(cx.spawn(async move |this, cx| {
             loop {
                 let snapshot = result.snapshot();
@@ -80,7 +81,9 @@ impl Workspace {
                 if !matches!(applied, Ok(true)) {
                     break;
                 }
-                result.changed().await;
+                if !updates.changed().await {
+                    break;
+                }
                 // Coalesce fast batch and cache events to avoid repainting for every batch.
                 cx.background_executor()
                     .timer(Duration::from_millis(33))

@@ -4,7 +4,7 @@ use crate::table::GridEvents;
 use arrow_array::ArrayRef;
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::*;
-use rowglide_core::{CopyError, CopyFormat, QueryResult};
+use rowglide_core::{Cancellation, CopyError, CopyFormat, QueryResult};
 use std::sync::Arc;
 
 /// Original data captured before opening a menu; independent of the active tab.
@@ -17,23 +17,22 @@ pub(crate) enum CopyTarget {
 }
 
 impl CopyTarget {
-    /// Resolve cached data without disk I/O; a SQL miss queues a background reread.
-    /// Returns None only while a valid SQL row is awaiting its batch.
-    pub(crate) fn resolve(&self) -> Result<Option<(ArrayRef, usize)>, CopyError> {
+    /// Resolve the captured original value, awaiting a bounded SQL cache reply when needed.
+    /// Cancellation ends this wait without cancelling the query or other copy requests.
+    pub(crate) async fn resolve(
+        &self,
+        cancel: &Cancellation,
+    ) -> Result<(ArrayRef, usize), CopyError> {
+        cancel.check()?;
         match self {
-            Self::Cell(array, row) => Ok(Some((array.clone(), *row))),
+            Self::Cell(array, row) => Ok((array.clone(), *row)),
             Self::Sql(result, row, col) => {
-                if let Some((batch, local)) = result.row(*row) {
-                    let array = batch
-                        .columns()
-                        .get(*col)
-                        .ok_or_else(|| CopyError::Invalid("Copy column is unavailable".into()))?;
-                    return Ok(Some((array.clone(), local)));
-                }
-                if *row >= result.snapshot().rows {
-                    return Err(CopyError::Invalid("Copy row is unavailable".into()));
-                }
-                Ok(None)
+                let (batch, local) = result.row_async(*row, cancel).await?;
+                let array = batch
+                    .columns()
+                    .get(*col)
+                    .ok_or_else(|| CopyError::Invalid("Copy column is unavailable".into()))?;
+                Ok((array.clone(), local))
             }
         }
     }
@@ -88,7 +87,8 @@ mod tests {
         let mut active = Arc::new(StringArray::from(vec!["original"])) as ArrayRef;
         let target = CopyTarget::Cell(active.clone(), 0);
         active = Arc::new(StringArray::from(vec!["replacement"]));
-        let (array, row) = target.resolve()?.ok_or("Missing retained cell")?;
+        let (array, row) =
+            futures_lite::future::block_on(target.resolve(&Cancellation::default()))?;
         assert_eq!(
             serialize_cell(
                 array.as_ref(),
@@ -147,15 +147,8 @@ mod sql_tests {
         assert!(result.snapshot().disk_bytes > 0);
         let target = CopyTarget::Sql(result.clone(), 0, 0);
         drop(result);
-        let (array, row) = loop {
-            if let Some(cell) = target.resolve()? {
-                break cell;
-            }
-            if Instant::now() > deadline {
-                return Err("Copy reread timed out".into());
-            }
-            thread::sleep(Duration::from_millis(5));
-        };
+        let (array, row) =
+            futures_lite::future::block_on(target.resolve(&Cancellation::default()))?;
         assert_eq!(
             serialize_cell(
                 array.as_ref(),

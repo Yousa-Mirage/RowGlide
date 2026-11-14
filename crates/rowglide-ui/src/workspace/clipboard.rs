@@ -4,12 +4,12 @@ use super::Workspace;
 use crate::clipboard::CopyRequested;
 use gpui_kit::*;
 use rowglide_core::{Cancellation, CopyError, CopyLimits, serialize_cell};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// At most one clipboard request may publish; a newer request cancels its predecessor.
 #[derive(Default)]
 pub(super) struct ClipboardState {
-    /// Cancels serialization and polling without cancelling the underlying SQL result.
+    /// Cancels serialization and cache waiting without cancelling the underlying SQL result.
     cancel: Cancellation,
     /// Owns the completion future; replacing it suppresses stale clipboard writes.
     task: Option<Task<()>>,
@@ -27,7 +27,7 @@ impl Drop for ClipboardState {
 impl Workspace {
     /// Resolve the captured cell asynchronously and serialize on a background executor.
     /// Only successful complete output reaches the clipboard. Missing SQL batches are
-    /// retried for up to 30 seconds without consuming the query's progress channel.
+    /// awaited for up to 30 seconds through an independent reply, with no polling.
     /// Superseding requests cancel the previous worker and completion task.
     pub(super) fn copy_cell(&mut self, request: CopyRequested, cx: &mut Context<Self>) {
         self.clipboard.cancel.cancel();
@@ -36,24 +36,12 @@ impl Workspace {
         self.clipboard.message = Some("Copying…".into());
         let cancel = self.clipboard.cancel.clone();
         self.clipboard.task = Some(cx.spawn(async move |this, cx| {
-            let started = Instant::now();
-            let resolved = loop {
-                if let Err(error) = cancel.check() {
-                    break Err(CopyError::from(error));
-                }
-                match request.target.resolve() {
-                    Ok(Some(cell)) => break Ok(cell),
-                    Err(error) => break Err(error),
-                    Ok(None) if started.elapsed() >= Duration::from_secs(30) => {
-                        break Err(CopyError::Invalid(
-                            "Timed out reading the cell from the SQL cache; retry copying".into(),
-                        ));
-                    }
-                    Ok(None) => {
-                        cx.background_executor()
-                            .timer(Duration::from_millis(25))
-                            .await
-                    }
+            let resolved = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => Err(CopyError::from(rowglide_core::QueryError::Cancelled)),
+                result = request.target.resolve(&cancel) => result,
+                _ = cx.background_executor().timer(Duration::from_secs(30)) => {
+                    Err(CopyError::Invalid("Timed out reading the cell from the SQL cache; retry copying".into()))
                 }
             };
             let outcome = match resolved {
