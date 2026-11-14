@@ -322,6 +322,8 @@ impl Render for Workspace {
         let mut body = div().flex_1().min_h_0().flex().child(
             div().flex_1().min_w_0().h_full().child(
                 DataTable::new(&self.table)
+                    // Stop at the first and last row without exposing overscroll space.
+                    .scroll_bounce(false)
                     .stripe(false)
                     .bordered(false)
                     .small(),

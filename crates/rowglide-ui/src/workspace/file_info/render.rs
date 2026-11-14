@@ -151,6 +151,7 @@ impl Workspace {
                     .overflow_hidden()
                     .child(
                         DataTable::new(&self.file_info.table)
+                            .scroll_bounce(false)
                             .small()
                             .stripe(false)
                             .bordered(false),
