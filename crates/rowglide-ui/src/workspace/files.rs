@@ -6,6 +6,64 @@ use gpui_kit::*;
 use rowglide_core::Cancellation;
 
 impl Workspace {
+    /// Close one source tab, cancelling active work and releasing its retained results.
+    /// Closing an inactive tab preserves the current query and drafts. The active tab
+    /// falls forward to its right neighbor, then left, or back to the empty view.
+    /// Independent clipboard work may retain its captured value until copying finishes.
+    pub(super) fn close_tab(&mut self, source: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.tabs.iter().position(|tab| tab.source.id == source) else {
+            return;
+        };
+        if let Err(error) = self.backend.close(source) {
+            self.status = format!("Cannot close file: {error}");
+            self.error = true;
+            cx.notify();
+            return;
+        }
+
+        let was_active = index == self.active_tab;
+        if was_active {
+            self.cancellation.cancel();
+            self.task = None;
+            self.generation += 1;
+            self.busy = false;
+            self.close_file_info(cx);
+            self.selected = None;
+            self.pending_cell = None;
+            self.expanded.clear();
+            self.table.update(cx, |table, cx| {
+                table.clear_selection(cx);
+                let grid = table.delegate_mut();
+                grid.preview = None;
+                grid.sql_result = None;
+                grid.sql_snapshot = None;
+                grid.loading = false;
+                grid.sort = None;
+                table.refresh(cx);
+            });
+        }
+
+        super::state::remove_tab(&mut self.tabs, &mut self.active_tab, index);
+        if self.tabs.is_empty() {
+            self.query = Default::default();
+            self.sql_open = false;
+            self.error = false;
+            self.status = "Ready".into();
+            self.search
+                .update(cx, |state, cx| state.set_value("", window, cx));
+            self.limit
+                .update(cx, |state, cx| state.set_value("", window, cx));
+            self.offset
+                .update(cx, |state, cx| state.set_value("", window, cx));
+            self.sql
+                .update(cx, |state, cx| state.set_value("", window, cx));
+        } else if was_active {
+            self.restore_session(window, cx);
+            self.refresh_file_info(cx);
+        }
+        cx.notify();
+    }
+
     /// Build the shared Open files button and wire it to native path selection.
     pub(super) fn render_open_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
         Button::new("open-files")
@@ -70,9 +128,14 @@ impl Workspace {
                 let had_tabs = !this.tabs.is_empty();
                 let mut opened = None;
                 let mut errors = Vec::new();
+                // A duplicate open may finish after its tab was explicitly closed.
+                let registered = this.backend.sources();
                 for (path, result) in results {
                     match result {
                         Ok(source) => {
+                            if !registered.iter().any(|file| file.id == source.id) {
+                                continue;
+                            }
                             let index = if let Some(index) =
                                 this.tabs.iter().position(|tab| tab.source.id == source.id)
                             {

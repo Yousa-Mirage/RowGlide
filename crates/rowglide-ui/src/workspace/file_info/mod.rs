@@ -177,11 +177,9 @@ impl Workspace {
         self.file_info.task = Some(cx.spawn(async move |this, cx| {
             let result = worker.await;
             let _ = this.update(cx, |this, cx| {
-                if !key.is_current(
-                    this.file_info.request,
-                    this.active_tab().source.id,
-                    this.active_tab().info.open,
-                ) {
+                if !this.tabs.get(this.active_tab).is_some_and(|tab| {
+                    key.is_current(this.file_info.request, tab.source.id, tab.info.open)
+                }) {
                     return;
                 }
                 this.file_info.table.update(cx, |table, cx| {

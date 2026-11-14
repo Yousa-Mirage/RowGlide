@@ -281,3 +281,74 @@ fn corrupt_files_empty_results_and_quoted_columns() -> Result<(), Box<dyn Error>
     assert_eq!(empty.schema.fields().len(), 2);
     Ok(())
 }
+
+/// Closing unregisters only that source, preserves owned cursors, and never reuses its ID.
+#[test]
+fn closing_sources_preserves_other_files_and_allows_reopening() -> Result<(), Box<dyn Error>> {
+    let temp = tempfile::tempdir()?;
+    let first_path = temp.path().join("first.parquet");
+    let second_path = temp.path().join("second.parquet");
+    let conn = Connection::open_in_memory()?;
+    for path in [&first_path, &second_path] {
+        conn.execute(
+            "COPY (SELECT 42 AS id) TO ? (FORMAT PARQUET)",
+            [path.to_string_lossy().as_ref()],
+        )?;
+    }
+    let backend = DuckDbBackend::default();
+    let first = backend.open(&first_path, Cancellation::default())?;
+    let second = backend.open(&second_path, Cancellation::default())?;
+    let cancel = Cancellation::default();
+    let cursor = backend.query(
+        Query {
+            source: first.id,
+            ..Query::default()
+        },
+        cancel.clone(),
+    )?;
+    backend.close(first.id)?;
+    backend.close(first.id)?;
+    backend.close(usize::MAX)?;
+    assert_eq!(
+        backend
+            .sources()
+            .iter()
+            .map(|source| source.id)
+            .collect::<Vec<_>>(),
+        vec![second.id]
+    );
+    assert!(
+        backend
+            .query(
+                Query {
+                    source: first.id,
+                    ..Query::default()
+                },
+                Cancellation::default()
+            )
+            .is_err()
+    );
+    assert_eq!(Preview::collect(cursor, &cancel)?.rows, 1);
+    let cancel = Cancellation::default();
+    assert_eq!(
+        Preview::collect(
+            backend.query(
+                Query {
+                    source: second.id,
+                    ..Query::default()
+                },
+                cancel.clone()
+            )?,
+            &cancel
+        )?
+        .rows,
+        1
+    );
+    let reopened = backend.open(&first_path, Cancellation::default())?;
+    assert!(reopened.id > second.id);
+    assert!(first_path.exists());
+    backend.close(second.id)?;
+    backend.close(reopened.id)?;
+    assert!(backend.sources().is_empty());
+    Ok(())
+}

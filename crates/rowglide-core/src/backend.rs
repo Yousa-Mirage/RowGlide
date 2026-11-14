@@ -137,6 +137,14 @@ pub trait Backend: Send + Sync {
             "This backend cannot open local files".into(),
         ))
     }
+    /// Unregister a source without modifying its file or waiting for running queries.
+    /// Callers cancel associated work separately. Implementations must avoid file I/O
+    /// and engine waits here; already-started cursors retain their owned resources.
+    /// Unknown IDs are harmless. Fixture-only backends need no registry cleanup.
+    fn close(&self, _source: usize) -> Result<(), QueryError> {
+        Ok(())
+    }
+
     /// Read one page of Parquet footer details on a background worker.
     /// Does not modify Browse/SQL state. Unsupported backends return an explicit error;
     /// implementations must honor cancellation and bound retained metadata buffers.

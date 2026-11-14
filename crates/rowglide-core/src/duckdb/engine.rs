@@ -32,8 +32,8 @@ pub(super) struct FileSource {
 /// budgets. Every query opens its own in-memory connection and scans the source
 /// file directly; the registry holds neither result buffers nor live GUI objects.
 pub struct DuckDbBackend {
-    /// Registered sources; vector indices are their backend-local IDs.
-    files: Mutex<Vec<FileSource>>,
+    /// Stable source slots; closed entries are empty and IDs are never reused.
+    files: Mutex<Vec<Option<FileSource>>>,
     /// Serializes inspection and execution so requests cannot multiply engine budgets.
     gate: Arc<Semaphore>,
 }
@@ -51,7 +51,7 @@ impl Default for DuckDbBackend {
 impl DuckDbBackend {
     /// Lock the file registry, reporting poison without retaining a borrowed lock guard.
     /// Typed I/O and engine errors bypass this boundary and propagate unchanged.
-    fn registry(&self) -> Result<MutexGuard<'_, Vec<FileSource>>, QueryError> {
+    fn registry(&self) -> Result<MutexGuard<'_, Vec<Option<FileSource>>>, QueryError> {
         self.files
             .lock()
             .map_err(|_| QueryError::Backend("File registry lock was poisoned".into()))
@@ -127,7 +127,13 @@ impl Backend for DuckDbBackend {
     fn sources(&self) -> Vec<Source> {
         self.files.lock().map_or_else(
             |_| vec![],
-            |files| files.iter().map(|file| file.info.clone()).collect(),
+            |files| {
+                files
+                    .iter()
+                    .flatten()
+                    .map(|file| file.info.clone())
+                    .collect()
+            },
         )
     }
 
@@ -160,7 +166,12 @@ impl Backend for DuckDbBackend {
                 ));
             }
         };
-        if let Some(file) = self.registry()?.iter().find(|file| file.path == path) {
+        if let Some(file) = self
+            .registry()?
+            .iter()
+            .flatten()
+            .find(|file| file.path == path)
+        {
             return Ok(file.info.clone());
         }
         let _guard = lock_engine(&self.gate, &cancel)?;
@@ -179,7 +190,7 @@ impl Backend for DuckDbBackend {
         };
         cancel.check()?;
         let mut files = self.registry()?;
-        if let Some(file) = files.iter().find(|file| file.path == path) {
+        if let Some(file) = files.iter().flatten().find(|file| file.path == path) {
             return Ok(file.info.clone());
         }
         let info = Source {
@@ -193,12 +204,22 @@ impl Backend for DuckDbBackend {
             parquet,
             description: "Local file",
         };
-        files.push(FileSource {
+        files.push(Some(FileSource {
             info: info.clone(),
             path,
             schema,
-        });
+        }));
         Ok(info)
+    }
+
+    /// Remove registry metadata without taking the engine gate or touching the file.
+    /// Existing workers own cloned source descriptors; their cancellation is independent.
+    /// Slots are not reused, so late work cannot resolve an old ID to a newly opened file.
+    fn close(&self, source: usize) -> Result<(), QueryError> {
+        if let Some(slot) = self.registry()?.get_mut(source) {
+            *slot = None;
+        }
+        Ok(())
     }
 
     /// Inspect one bounded footer relation under the same engine gate as data queries.
@@ -214,7 +235,7 @@ impl Backend for DuckDbBackend {
         let file = self
             .registry()?
             .get(source)
-            .cloned()
+            .and_then(Clone::clone)
             .ok_or_else(|| QueryError::Invalid("File is no longer available".into()))?;
         if file.info.parquet.is_none() {
             return Err(QueryError::Invalid(
@@ -245,7 +266,7 @@ impl Backend for DuckDbBackend {
         let file = self
             .registry()?
             .get(query.source)
-            .cloned()
+            .and_then(Clone::clone)
             .ok_or_else(|| QueryError::Invalid("File is no longer available".into()))?;
         stream::start(file, query, cancel, self.gate.clone())
     }

@@ -28,16 +28,17 @@ fn load_browse(
 }
 
 impl Workspace {
-    /// Capture the generation, active tab index and mode for the current request.
+    /// Capture the generation, stable source ID and mode, or None in an empty workspace.
     ///
     /// Completion handlers compare this snapshot with the live key before updating the
     /// GUI, preventing older requests from replacing another session's result.
-    pub(super) fn request_key(&self) -> RequestKey {
-        RequestKey {
+    pub(super) fn request_key(&self) -> Option<RequestKey> {
+        let tab = self.tabs.get(self.active_tab)?;
+        Some(RequestKey {
             generation: self.generation,
-            tab: self.active_tab,
-            mode: self.active_tab().mode,
-        }
+            source: tab.source.id,
+            mode: tab.mode,
+        })
     }
 
     /// Read the current Browse controls as owned strings without validating or applying them.

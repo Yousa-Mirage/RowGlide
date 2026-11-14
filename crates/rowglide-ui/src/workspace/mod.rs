@@ -143,7 +143,7 @@ impl Workspace {
                 &events,
                 window,
                 |this, _, event: &SortRequested, window, cx| {
-                    if this.active_tab().mode == TabMode::Sql {
+                    if this.tabs.is_empty() || this.active_tab().mode == TabMode::Sql {
                         return;
                     }
                     this.active_tab_mut().browse.sort = event.0;
@@ -157,6 +157,9 @@ impl Workspace {
                 },
             ),
             cx.subscribe(&table, |this, table, event, cx| {
+                if this.tabs.is_empty() {
+                    return;
+                }
                 if let TableEvent::DoubleClickedCell(row, col) = event {
                     this.close_file_info(cx);
                     this.selected = table.read(cx).delegate().row(*row).map(|(batch, r)| {

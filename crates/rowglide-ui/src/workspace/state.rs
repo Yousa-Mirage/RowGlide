@@ -18,15 +18,14 @@ pub(super) enum TabMode {
 
 /// Identity of the only background request allowed to update the active view.
 ///
-/// Generation changes invalidate replaced/cancelled requests. Tab index and mode
-/// prevent cross-session writes; indices remain valid identifiers only while tabs
-/// are not removed or reordered.
+/// Generation changes invalidate replaced/cancelled requests. Stable source IDs and
+/// mode prevent cross-session writes even when closing a tab shifts other indices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct RequestKey {
     /// Monotonic workspace request revision, also advanced on cancellation/restoration.
     pub(super) generation: u64,
-    /// Active tab index at submission; valid while tabs are not removed or reordered.
-    pub(super) tab: usize,
+    /// Backend source ID at submission, independent of the tab position.
+    pub(super) source: usize,
     /// Browse or SQL session that submitted this request.
     pub(super) mode: TabMode,
 }
@@ -260,6 +259,21 @@ impl Default for ResultState {
     }
 }
 
+/// Remove a valid tab and drop its saved sessions while preserving the active source.
+/// Closing the active tab selects its right neighbor, or the leftmost available
+/// predecessor at the end. An empty workspace uses index zero; stale indices do nothing.
+pub(super) fn remove_tab(tabs: &mut Vec<TabState>, active: &mut usize, index: usize) {
+    if index >= tabs.len() {
+        return;
+    }
+    tabs.remove(index);
+    if index < *active {
+        *active -= 1;
+    } else if index == *active {
+        *active = index.min(tabs.len().saturating_sub(1));
+    }
+}
+
 /// Evict the least recently touched stored results until at most three remain.
 ///
 /// The active result normally lives in the table and is not counted here. Eviction
@@ -321,12 +335,50 @@ mod tests {
         })
     }
 
+    /// Closing neighbors preserves the active source; closing it selects right, then left.
+    /// The final removal releases saved Arrow data and leaves a reusable empty workspace.
+    #[test]
+    fn closing_tabs_preserves_identity_and_releases_data() {
+        let mut tabs = vec![tab(10), tab(20), tab(30), tab(40)];
+        let mut active = 1;
+        let key = RequestKey {
+            generation: 7,
+            source: tabs[active].source.id,
+            mode: TabMode::Browse,
+        };
+        remove_tab(&mut tabs, &mut active, 3);
+        assert_eq!(active, 1);
+        remove_tab(&mut tabs, &mut active, 0);
+        assert_eq!(active, 0);
+        assert_eq!(tabs[active].source.id, key.source);
+        tabs[active].sql = "unfinished SQL".into();
+        remove_tab(&mut tabs, &mut active, 99);
+        assert_eq!(tabs[active].sql, "unfinished SQL");
+
+        remove_tab(&mut tabs, &mut active, 0);
+        assert_eq!(tabs[active].source.id, 30);
+        tabs.push(tab(50));
+        active = 1;
+        remove_tab(&mut tabs, &mut active, 1);
+        assert_eq!(tabs[active].source.id, 30);
+        let array: ArrayRef = Arc::new(Int64Array::from(vec![1]));
+        let retained = Arc::downgrade(&array);
+        tabs[0].browse_result.selected = Some(("id".into(), array, 0));
+        remove_tab(&mut tabs, &mut active, 0);
+        assert!(tabs.is_empty());
+        assert_eq!(active, 0);
+        assert!(retained.upgrade().is_none());
+        remove_tab(&mut tabs, &mut active, 0);
+        tabs.push(tab(60));
+        assert_eq!(tabs[active].source.id, 60);
+    }
+
     /// Verify that changing any request identity component makes a result stale.
     #[test]
     fn request_identity_rejects_other_tabs_modes_and_generations() {
         let current = RequestKey {
             generation: 7,
-            tab: 2,
+            source: 2,
             mode: TabMode::Browse,
         };
         assert_ne!(
@@ -336,7 +388,13 @@ mod tests {
                 ..current
             }
         );
-        assert_ne!(current, RequestKey { tab: 1, ..current });
+        assert_ne!(
+            current,
+            RequestKey {
+                source: 1,
+                ..current
+            }
+        );
         assert_ne!(
             current,
             RequestKey {

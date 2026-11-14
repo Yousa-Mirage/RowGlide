@@ -2,7 +2,7 @@
 
 use super::{TabMode, Workspace};
 use gpui_kit::component::{
-    ActiveTheme, Disableable, Sizable,
+    ActiveTheme, Disableable, IconName, Sizable,
     button::{Button, ButtonVariants},
     input::{Editor, Input},
     tab::{Tab, TabBar},
@@ -14,17 +14,26 @@ use rowglide_core::{BrowsePage, Query};
 impl Workspace {
     /// Build Folder Tabs for registered sources and select the active file.
     ///
-    /// Clicking another tab delegates session saving, cancellation and restoration to
-    /// the workspace; this renderer does not open or query files.
+    /// Clicking another tab restores its session. Each close button uses the stable
+    /// source ID and stops propagation so closing does not also select a shifted tab.
     pub(super) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         TabBar::new("open-file-tabs")
             .folder()
             .selected_index(self.active_tab)
-            .children(
-                self.tabs
-                    .iter()
-                    .map(|tab| Tab::new().label(tab.source.name.clone())),
-            )
+            .children(self.tabs.iter().map(|tab| {
+                let source = tab.source.id;
+                Tab::new().label(tab.source.name.clone()).suffix(
+                    Button::new(("close-file-tab", source))
+                        .xsmall()
+                        .ghost()
+                        .icon(IconName::Close)
+                        .tooltip(format!("Close {}", tab.source.name))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            this.close_tab(source, window, cx);
+                        })),
+                )
+            }))
             .on_click(
                 cx.listener(|this, index: &usize, window, cx| this.switch_tab(*index, window, cx)),
             )
