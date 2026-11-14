@@ -40,6 +40,7 @@ pub(super) fn summary(
 /// Runs on a worker with an interrupt monitor. Limits bound returned data, while DuckDB
 /// still parses the file footer internally. Raw key/value blobs and optional statistics
 /// remain typed; oversized records fail explicitly rather than silently truncating values.
+/// Schema pages omit the first (root) node before pagination, retaining original node IDs.
 pub(super) fn page(
     conn: &Connection,
     request: ParquetRequest,
@@ -47,7 +48,8 @@ pub(super) fn page(
 ) -> Result<ParquetPage, QueryError> {
     let relation = match request.section {
         ParquetSection::Schema => {
-            "SELECT row_number() OVER () AS node, name, type AS physical_type, repetition_type, num_children, logical_type, converted_type, duckdb_type, type_length, precision, scale, field_id FROM parquet_schema(getvariable('source_path'))"
+            // Skip by position, not name: actual fields may also be named root or schema.
+            "SELECT row_number() OVER () AS node, name, type AS physical_type, repetition_type, num_children, logical_type, converted_type, duckdb_type, type_length, precision, scale, field_id FROM parquet_schema(getvariable('source_path')) QUALIFY node > 1"
         }
         ParquetSection::RowGroups => {
             "SELECT row_group_id, path_in_schema, column_id, row_group_num_rows, row_group_num_columns, compression, encodings, total_compressed_size, total_uncompressed_size, num_values, stats_min_value, stats_max_value, min_is_exact, max_is_exact, stats_null_count, stats_distinct_count, data_page_offset, dictionary_page_offset FROM parquet_metadata(getvariable('source_path'))"

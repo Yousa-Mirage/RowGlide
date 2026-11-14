@@ -21,7 +21,7 @@ pub struct ParquetSummary {
 /// Detailed metadata relation requested independently of Browse and SQL results.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ParquetSection {
-    /// Original flattened schema, including group nodes, repetition and logical types.
+    /// Flattened schema excluding the root, retaining nested groups and original node IDs.
     #[default]
     Schema,
     /// One record per row-group column chunk, including optional statistics.

@@ -13,7 +13,7 @@ fn summary_schema_and_column_chunks() -> Result<(), Box<dyn Error>> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("nested ' data.parquet");
     let conn = Connection::open_in_memory()?;
-    conn.execute("COPY (SELECT i AS id, [i, NULL] AS items, {'value': i} AS profile FROM range(5000) t(i)) TO ? (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 2048)", [path.to_string_lossy().as_ref()])?;
+    conn.execute("COPY (SELECT i AS id, [i, NULL] AS items, {'value': i} AS root FROM range(5000) t(i)) TO ? (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 2048)", [path.to_string_lossy().as_ref()])?;
     let backend = DuckDbBackend::default();
     let source = backend.open(&path, Cancellation::default())?;
     assert_eq!(source.rows, Some(5000));
@@ -27,7 +27,18 @@ fn summary_schema_and_column_chunks() -> Result<(), Box<dyn Error>> {
         ParquetRequest::new(ParquetSection::Schema, 0)?,
         Cancellation::default(),
     )?;
-    assert!(schema.preview.rows > 3);
+    let mut names = Vec::new();
+    for batch in &schema.preview.batches {
+        let column = batch.schema().index_of("name")?;
+        let values = batch
+            .column(column)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .ok_or("Expected schema names")?;
+        names.extend(values.iter().flatten().map(str::to_owned));
+    }
+    // Only the enclosing root is omitted; a field named root and nested groups survive.
+    assert_eq!(names, ["id", "items", "list", "element", "root", "value"]);
     assert!(!schema.has_next);
     assert!(
         schema
@@ -87,7 +98,7 @@ fn wide_schema_paging_and_empty_file() -> Result<(), Box<dyn Error>> {
             Cancellation::default(),
         )?;
         assert_eq!(page.has_next, offset < 200);
-        assert!(page.preview.rows <= ParquetRequest::PAGE_SIZE);
+        assert_eq!(page.preview.rows, if offset < 200 { 100 } else { 5 });
         for batch in page.preview.batches {
             let ids = batch
                 .column(0)
@@ -97,7 +108,7 @@ fn wide_schema_paging_and_empty_file() -> Result<(), Box<dyn Error>> {
             nodes.extend(ids.values().iter().copied());
         }
     }
-    assert_eq!(nodes, (1..=206).collect::<Vec<_>>());
+    assert_eq!(nodes, (2..=206).collect::<Vec<_>>());
     let page = backend.parquet_metadata(
         source.id,
         ParquetRequest::new(ParquetSection::KeyValue, 0)?,
@@ -197,7 +208,7 @@ fn oversized_metadata_is_explicit_and_recoverable() -> Result<(), Box<dyn Error>
         ParquetRequest::new(ParquetSection::Schema, 0)?,
         Cancellation::default(),
     )?;
-    assert_eq!(schema.preview.rows, 2);
+    assert_eq!(schema.preview.rows, 1);
     Ok(())
 }
 

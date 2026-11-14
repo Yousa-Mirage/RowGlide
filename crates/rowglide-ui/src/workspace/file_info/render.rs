@@ -83,7 +83,7 @@ impl Workspace {
         }
         let hint = match section {
             Some(ParquetSection::Schema) => {
-                "Original schema order, including group nodes. Child counts describe nesting."
+                "Root omitted; nested groups retained in original order. Child counts describe nesting."
             }
             Some(ParquetSection::RowGroups) => {
                 "One row per column chunk. null means not recorded; check min/max exactness flags."
