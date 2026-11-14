@@ -3,21 +3,16 @@
 use crate::{Query, Source};
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
-use std::{
-    path::Path,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::path::Path;
+use tokio_util::sync::CancellationToken;
 
 /// Cloneable, one-way cancellation signal shared by a request and its workers.
 ///
-/// All clones observe the same atomic flag. Calling `cancel` requests cooperative
+/// All clones observe the same cancellation state. Calling `cancel` requests cooperative
 /// shutdown; it does not join threads or interrupt an engine by itself. Each new
 /// request needs a fresh token.
 #[derive(Clone, Default)]
-pub struct Cancellation(Arc<AtomicBool>);
+pub struct Cancellation(CancellationToken);
 
 impl Cancellation {
     /// Mark this token and all its clones as cancelled.
@@ -25,7 +20,16 @@ impl Cancellation {
     /// Repeated calls are harmless. Workers must observe the flag or arrange an
     /// engine-specific interrupt; this method returns without waiting for cleanup.
     pub fn cancel(&self) {
-        self.0.store(true, Ordering::Relaxed);
+        self.0.cancel();
+    }
+
+    /// Wait until this request is cancelled without polling or requiring a Tokio runtime.
+    ///
+    /// Returns immediately if cancellation already occurred. Dropping this future
+    /// does not cancel the request. Completion signals cancellation, not completion
+    /// of worker cleanup; engine-specific interruption remains the worker's responsibility.
+    pub async fn cancelled(&self) {
+        self.0.cancelled().await;
     }
 
     /// Return `Cancelled` if shutdown was requested, otherwise return success.
@@ -33,7 +37,7 @@ impl Cancellation {
     /// Workers call this at safe interruption points, including while waiting for
     /// resources. Checking the token does not clear or reset it.
     pub fn check(&self) -> Result<(), QueryError> {
-        if self.0.load(Ordering::Relaxed) {
+        if self.0.is_cancelled() {
             Err(QueryError::Cancelled)
         } else {
             Ok(())
@@ -143,4 +147,74 @@ pub trait Backend: Send + Sync {
         query: Query,
         cancellation: Cancellation,
     ) -> Result<Box<dyn BatchCursor>, QueryError>;
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::{Cancellation, QueryError};
+    use std::{
+        future::Future,
+        pin::pin,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+        task::{Context, Wake, Waker},
+    };
+
+    /// Records wakeups without starting an executor or runtime.
+    #[derive(Default)]
+    struct WakeFlag {
+        /// True after a pending cancellation waiter has been notified.
+        notified: AtomicBool,
+    }
+
+    impl Wake for WakeFlag {
+        /// Record a wake so the test can distinguish notification from later polling.
+        fn wake(self: Arc<Self>) {
+            self.notified.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Cancellation reaches clones, is idempotent, and leaves unrelated requests active.
+    #[test]
+    fn cancellation_is_shared_and_one_way() {
+        let token = Cancellation::default();
+        let cloned = token.clone();
+        let unrelated = Cancellation::default();
+        assert!(token.check().is_ok());
+        cloned.cancel();
+        token.cancel();
+        assert!(matches!(token.check(), Err(QueryError::Cancelled)));
+        assert!(matches!(cloned.check(), Err(QueryError::Cancelled)));
+        assert!(unrelated.check().is_ok());
+    }
+
+    /// Pending waiters are both woken and later subscribers observe cancellation immediately.
+    #[test]
+    fn cancellation_wakes_waiters_without_runtime() {
+        let token = Cancellation::default();
+        let cloned = token.clone();
+        let first_wake = Arc::new(WakeFlag::default());
+        let second_wake = Arc::new(WakeFlag::default());
+        let first_waker = Waker::from(first_wake.clone());
+        let second_waker = Waker::from(second_wake.clone());
+        let mut first_context = Context::from_waker(&first_waker);
+        let mut second_context = Context::from_waker(&second_waker);
+        let mut first = pin!(token.cancelled());
+        let mut second = pin!(cloned.cancelled());
+        assert!(first.as_mut().poll(&mut first_context).is_pending());
+        assert!(second.as_mut().poll(&mut second_context).is_pending());
+        cloned.cancel();
+        assert!(first_wake.notified.load(Ordering::Relaxed));
+        assert!(second_wake.notified.load(Ordering::Relaxed));
+        assert!(first.as_mut().poll(&mut first_context).is_ready());
+        assert!(second.as_mut().poll(&mut second_context).is_ready());
+        assert!(
+            pin!(token.cancelled())
+                .as_mut()
+                .poll(&mut first_context)
+                .is_ready()
+        );
+    }
 }

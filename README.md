@@ -255,3 +255,40 @@ page is cached. Close/switch cancels old requests; errors offer **Retry** withou
 replacing Browse/SQL results. The panel shares the right-hand area with the cell
 inspector: double-clicking a data cell opens the inspector. A single click only
 changes the table selection.
+
+
+## Async coordination roadmap
+
+Core explicitly depends on Tokio with only `sync` enabled and tokio-util 0.7.20
+with default features disabled. The lockfile already
+contained Tokio 1.54.1 through platform-specific dependencies; this declaration
+also makes it a direct dependency in native builds. The bounded SQL cache-read request queue now uses Tokio `mpsc`; its dedicated
+reader waits with `blocking_recv` instead of waking every 20 ms. Dropping the last
+result owner closes the sole sender and wakes the reader; queued reads check the
+shutdown token before disk access. Other task execution and channels are unchanged.
+The application does not yet create a Tokio runtime.
+
+The first proposed migration is result notifications and cache-read completion:
+use `watch` for independently subscribed progress/revision updates, and bounded
+read requests with `oneshot` replies for explicit awaited reads. This would let
+copying wait for the requested batch instead of polling every 25 ms. These
+synchronization primitives can be awaited by GPUI tasks without a Tokio runtime;
+Tokio timer-dependent operations require a runtime and are not enabled here.
+
+The shared `Cancellation` wrapper now uses `tokio_util::sync::CancellationToken`.
+Existing `cancel()` / `check()` behavior is preserved; `cancelled().await` lets
+future integrations wait for cancellation without polling or a Tokio runtime.
+Existing engine-interrupt and transport polling loops have not yet migrated.
+
+Later migrations may address cancellable engine admission and background cleanup
+scheduling. Preserve bounded queues, explicit terminal
+states, partial results and resource accounting throughout. `watch` is for
+coalescible state, never the lossless Arrow batch stream. Keep ordinary short
+metadata locks synchronous and all GUI mutations on the GPUI thread.
+
+If runtime services become necessary, app should own one runtime and inject the
+required service/handle. Blocking DuckDB and Arrow IPC work must remain on
+blocking workers; starting a Tokio task does not make synchronous work nonblocking.
+Long-lived workers should not be mechanically moved into `spawn_blocking`.
+Already-running blocking work still needs cooperative cancellation and DuckDB
+interrupts; a timeout alone does not release its resources.

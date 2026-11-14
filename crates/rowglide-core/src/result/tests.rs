@@ -3,7 +3,7 @@
 use super::*;
 use crate::MockBackend;
 use arrow_array::Int64Array;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Fixture whose cursor emits one batch and then waits for cancellation.
 struct PausedBackend;
@@ -428,4 +428,32 @@ fn concurrent_results_share_budget_and_cleanup() -> Result<(), QueryError> {
     );
     drop(results);
     released(&store)
+}
+
+/// Closing a result wakes an idle disk reader and releases its shared state without polling.
+#[test]
+fn dropping_result_releases_idle_reader() -> Result<(), QueryError> {
+    let result = QueryResult::start(
+        ResultStore::new(CacheLimits::default())?,
+        Arc::new(MockBackend),
+        Query {
+            source: 2,
+            ..Query::default()
+        },
+        Cancellation::default(),
+        ResultLimits::default(),
+    )?;
+    assert_eq!(finished(&result)?.phase, ResultPhase::Complete);
+    let shared = Arc::downgrade(&result.shared);
+    drop(result);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while shared.upgrade().is_some() {
+        if Instant::now() >= deadline {
+            return Err(disk::error(
+                "Idle result reader retained shared state after drop",
+            ));
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    Ok(())
 }

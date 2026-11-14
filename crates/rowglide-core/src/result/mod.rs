@@ -19,11 +19,11 @@ use std::{
     sync::{
         Arc, Mutex, MutexGuard,
         atomic::{AtomicU64, Ordering},
-        mpsc,
     },
     thread,
-    time::Duration,
 };
+
+use tokio::sync::mpsc;
 
 /// Resource limits for one retained SQL result, separate from DuckDB's execution budget.
 #[derive(Clone, Copy)]
@@ -173,8 +173,8 @@ pub struct QueryResult {
     shared: Arc<Shared>,
     /// GUI-facing coalesced update receiver; one active consumer per result.
     updates: Receiver<()>,
-    /// Bounded nonblocking requests to the dedicated disk reader.
-    reads: mpsc::SyncSender<usize>,
+    /// Sole sender for bounded disk-read requests; dropping it wakes the idle reader.
+    reads: mpsc::Sender<usize>,
 }
 
 impl QueryResult {
@@ -219,7 +219,7 @@ impl QueryResult {
             writer: Mutex::new(None),
         });
         store.register(&shared);
-        let (reads, receiver) = mpsc::sync_channel(8);
+        let (reads, receiver) = mpsc::channel(8);
         let result = Self {
             shared: shared.clone(),
             updates,
@@ -360,14 +360,15 @@ fn write_result(
     }
 }
 
-/// Decode requested committed batches outside the metadata lock and wake the UI afterward.
-fn read_worker(shared: Arc<Shared>, receiver: mpsc::Receiver<usize>) {
-    while shared.shutdown.check().is_ok() {
-        let index = match receiver.recv_timeout(Duration::from_millis(20)) {
-            Ok(index) => index,
-            Err(mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-        };
+/// Decode committed batches on a dedicated thread and wake the UI afterward.
+/// Wait without polling while idle. Dropping QueryResult closes the sole sender;
+/// its shutdown token prevents queued requests from starting further disk reads.
+/// Tokio's blocking receive needs no runtime and must never run on the GUI thread.
+fn read_worker(shared: Arc<Shared>, mut receiver: mpsc::Receiver<usize>) {
+    while let Some(index) = receiver.blocking_recv() {
+        if shared.shutdown.check().is_err() {
+            break;
+        }
         let result = shared.store.read(&shared, index);
         if shared.shutdown.check().is_err() {
             break;
