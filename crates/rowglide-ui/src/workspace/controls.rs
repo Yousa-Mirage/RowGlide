@@ -80,7 +80,6 @@ impl Workspace {
             .child(
                 Button::new("reset")
                     .small()
-                    .ghost()
                     .label("Reset")
                     .disabled(sql_mode)
                     .on_click(cx.listener(|this, _, window, cx| {
