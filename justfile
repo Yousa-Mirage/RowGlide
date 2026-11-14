@@ -28,4 +28,4 @@ bundle-macos:
 
 # Document the codebase.
 document:
-    cargo doc --workspace
+    cargo doc --workspace --no-deps
