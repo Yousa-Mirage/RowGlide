@@ -97,6 +97,20 @@ impl Workspace {
                     })),
             )
             .child(div().flex_1())
+            .when(self.active_tab().source.parquet.is_some(), |toolbar| {
+                toolbar.child(
+                    Button::new("file-info-toggle")
+                        .small()
+                        .ghost()
+                        .label(if self.active_tab().info.open {
+                            "Hide info"
+                        } else {
+                            "File info"
+                        })
+                        .tooltip("Parquet source properties and footer metadata")
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_file_info(cx))),
+                )
+            })
             .child(
                 Button::new("sql-toggle")
                     .small()
@@ -168,6 +182,9 @@ impl Workspace {
             .child(
                 div()
                     .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
                     .text_xs()
                     .text_color(if self.error {
                         rgb(0xb34c46)
@@ -229,6 +246,18 @@ impl Workspace {
                         ),
                 )
             })
+            .when_some(
+                super::file_info::source_counts(&self.active_tab().source),
+                |bar, label| {
+                    bar.child(
+                        div()
+                            .flex_shrink_0()
+                            .text_xs()
+                            .text_color(rgb(0x6c7b73))
+                            .child(label),
+                    )
+                },
+            )
             .child(self.render_memory())
     }
 }

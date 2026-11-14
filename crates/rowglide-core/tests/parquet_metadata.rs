@@ -200,3 +200,60 @@ fn oversized_metadata_is_explicit_and_recoverable() -> Result<(), Box<dyn Error>
     assert_eq!(schema.preview.rows, 2);
     Ok(())
 }
+
+/// Closing a panel can cancel inspection while another query owns the engine gate.
+#[test]
+fn waiting_metadata_cancels_without_cancelling_data_query() -> Result<(), Box<dyn Error>> {
+    use std::{
+        sync::{Arc, mpsc},
+        thread,
+        time::Duration,
+    };
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("busy.parquet");
+    let conn = Connection::open_in_memory()?;
+    conn.execute(
+        "COPY (SELECT 1 AS id) TO ? (FORMAT PARQUET)",
+        [path.to_string_lossy().as_ref()],
+    )?;
+    let backend = Arc::new(DuckDbBackend::default());
+    let source = backend.open(&path, Cancellation::default())?;
+    let data_cancel = Cancellation::default();
+    let cursor = backend.query(
+        rowglide_core::Query {
+            source: source.id,
+            sql: Some("SELECT i FROM range(1000000) t(i)".into()),
+            ..Default::default()
+        },
+        data_cancel.clone(),
+    )?;
+    let cancel = Cancellation::default();
+    let worker_cancel = cancel.clone();
+    let worker_backend = backend.clone();
+    let request = ParquetRequest::new(ParquetSection::Schema, 0)?;
+    let (started, ready) = mpsc::channel();
+    let (sender, receiver) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        let _ = started.send(());
+        let _ = sender.send(worker_backend.parquet_metadata(source.id, request, worker_cancel));
+    });
+    ready.recv_timeout(Duration::from_secs(5))?;
+    assert!(matches!(
+        receiver.recv_timeout(Duration::from_millis(30)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    ));
+    cancel.cancel();
+    assert!(matches!(
+        receiver.recv_timeout(Duration::from_secs(5))?,
+        Err(QueryError::Cancelled)
+    ));
+    worker.join().map_err(|_| "Metadata worker panicked")?;
+    assert!(data_cancel.check().is_ok());
+    drop(cursor);
+    assert!(
+        backend
+            .parquet_metadata(source.id, request, Cancellation::default())
+            .is_ok()
+    );
+    Ok(())
+}

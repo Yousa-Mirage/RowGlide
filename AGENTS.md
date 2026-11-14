@@ -23,7 +23,7 @@ rowglide-app ----------------> rowglide-core
 
 - `app` 是可执行 crate，通过 `rowglide_ui::run(backend, results)` 启动界面；具体引擎的选择和构造仅在此进行。
 - `ui` 是库 crate，只公开启动函数；Workspace、表格和交互模块保持私有。组件通过 `core::Backend` 接口工作，不直接调用 DuckDB / Mock 实现。
-- `core` 不依赖 app、UI 或 GPUI，不持有 GUI 对象。`model` 保存共享数据模型，`backend` 保存接口、取消与错误，`pagination` 保存分页规则，`duckdb` / `mock` 保存具体实现。
+- `core` 不依赖 app、UI 或 GPUI，不持有 GUI 对象。`model` 保存共享数据模型，`backend` 保存接口、取消与错误，`pagination` 保存分页规则，`parquet` 保存文件概要与详情分页契约，`duckdb` / `mock` 保存具体实现。
 - `duckdb` 内部的连接、SQL 构造、传输模块保持私有，内部协作使用最小可见性。对外通过 core 根模块重导出稳定类型与接口。
 - 包之间不得出现循环依赖；共享模型不能重新放回依赖 UI 的 app。
 - 打开的文件使用 gpui-kit Folder Tabs 在顶部展示与切换，不使用左侧文件侧栏。
@@ -43,7 +43,8 @@ rowglide-app ----------------> rowglide-core
 - Browse 使用显式 Limit / Offset 分页，Limit 是每页行数；不通过滚动自动递增 OFFSET。深分页可能重复扫描，排序并列值须有确定顺序。不假设任意 SQL 结果顺序稳定。
 - Browse 不得静默截断用户的 Limit；超过资源预算时明确报错。SQL 不添加隐藏行数上限，不能将 Browse 分页参数应用到用户 SQL；后台连续读取 Arrow 批次，界面逐批显示。所有 SQL 结果共享 ResultStore，优先保留内存；预算不足时先淘汰可回读缓存，再逐批将较久未访问的结果写入 Arrow IPC。缓存和磁盘预算耗尽必须明确报错，取消或失败时标记部分结果。
 - SQL 构造必须正确引用标识符，并对筛选值使用参数绑定。不要通过字符串拼接插入文件路径或用户输入。
-- 首屏预览不等待精确总行数；未知、估算与准确行数必须区别展示。
+- 首屏预览不等待全表计数；Parquet 原文件准确总行数读取 footer，状态栏明确标记 Source，不能当作筛选或 SQL 结果总数。未知、估算与准确行数必须区别展示。
+- Parquet 详情按需加载、有界分页，元信息中的缺失统计保持 null，key/value 保留原始字节。详情请求使用独立取消和请求标识，不得覆盖 Browse/SQL 的结果与错误状态。
 - 模拟 SQL 只演示明确的预设结果和状态，不自行实现 SQL 解析器，不伪装成真实执行。
 
 ## 版本管理：jj

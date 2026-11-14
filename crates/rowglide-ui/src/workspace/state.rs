@@ -136,6 +136,8 @@ impl PageSummary {
 pub(super) struct TabState {
     /// Registered file metadata shared by both modes.
     pub(super) source: Source,
+    /// File information preferences, independent of Browse/SQL query state.
+    pub(super) info: super::file_info::InfoPreferences,
     /// Last applied Browse query, independent of pending input text.
     pub(super) browse: Query,
     /// Saved SQL editor draft; execution uses last_sql instead.
@@ -165,6 +167,7 @@ impl TabState {
                 ..Query::default()
             },
             source,
+            info: super::file_info::InfoPreferences::default(),
             sql: "SELECT * FROM current_file LIMIT 100;".into(),
             mode: TabMode::Browse,
             drafts: BrowseDraft::default(),

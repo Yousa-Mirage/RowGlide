@@ -361,6 +361,7 @@ impl Workspace {
         self.save_session(cx);
         self.active_tab = index;
         self.restore_session(window, cx);
+        self.refresh_file_info(cx);
     }
 
     /// Save the active mode, toggle Browse/SQL and restore the other mode's session.

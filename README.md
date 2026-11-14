@@ -214,3 +214,18 @@ oversized metadata fails explicitly. Missing statistics stay null and minimum/ma
 exactness flags are preserved. DuckDB may still parse the full footer internally.
 Overview information is captured at opening; detail requests read the current file.
 Files should remain unchanged while open. CSV inspection remains unchanged.
+
+Use **File info** in the toolbar to open the right-side panel. **Overview** shows
+opening-time file facts; **Schema**, **Row groups**, and **Metadata** load detail
+pages only when selected. The status bar labels original file rows/columns as
+**Source**, separately from the current Browse range or SQL result. Metadata
+pagination is independent of the data toolbar's Limit/Offset.
+
+The panel uses a virtualized table with horizontal scrolling for wide metadata.
+Select a detail cell to preview up to 2,000 characters and **Copy full value** to
+copy its complete content. Valid UTF-8 blobs display/copy as text; other blobs use
+reversible `0x` hexadecimal. Null and empty values remain distinct. File tabs retain
+their chosen panel section/page during the session, while only the active detail
+page is cached. Close/switch cancels old requests; errors offer **Retry** without
+replacing Browse/SQL results. The panel shares the right-hand area with the cell
+inspector: selecting a data cell returns to the inspector.

@@ -1,6 +1,7 @@
 //! Workspace state, event wiring, and top-level layout.
 
 mod controls;
+mod file_info;
 mod files;
 mod inspector;
 mod memory;
@@ -74,6 +75,8 @@ pub(crate) struct Workspace {
     error: bool,
 
     // Optional panels and selected-cell expansion.
+    /// Independent Parquet metadata presentation and cancellation lifecycle.
+    file_info: file_info::InfoView,
     /// Whether to render the SQL panel; synchronized with the active tab mode.
     sql_open: bool,
     /// Selected column label, retained Arrow array and row for the inspector.
@@ -145,6 +148,7 @@ impl Workspace {
             ),
             cx.subscribe(&table, |this, table, event, cx| {
                 if let TableEvent::SelectCell(row, col) = event {
+                    this.close_file_info(cx);
                     this.selected = table.read(cx).delegate().row(*row).map(|(batch, r)| {
                         (
                             batch.schema().field(*col).name().clone(),
@@ -188,6 +192,7 @@ impl Workspace {
             status: "Ready".into(),
             error: false,
             sql_open: false,
+            file_info: file_info::InfoView::new(window, cx),
             selected: None,
             pending_cell: None,
             expanded: HashSet::new(),
@@ -311,7 +316,9 @@ impl Render for Workspace {
                     .small(),
             ),
         );
-        if let Some((name, array, row)) = self.selected.clone() {
+        if self.active_tab().info.open && self.active_tab().source.parquet.is_some() {
+            body = body.child(self.render_file_info(cx));
+        } else if let Some((name, array, row)) = self.selected.clone() {
             body = body.child(self.render_inspector(name, array, row, cx));
         }
 
