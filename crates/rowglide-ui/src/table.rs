@@ -1,9 +1,11 @@
 //! Table adapter for Browse pages, streamed SQL results, sorting and cell copying.
 
+pub(crate) mod sizing;
+
 use crate::cells;
 use crate::clipboard::{CopyTarget, copy_menu};
 use arrow_array::RecordBatch;
-use arrow_schema::{DataType, SchemaRef};
+use arrow_schema::SchemaRef;
 use gpui_kit::component::{
     ActiveTheme,
     menu::ContextMenuExt,
@@ -27,6 +29,8 @@ pub(crate) struct SortRequested(pub(crate) Option<Sort>);
 /// The delegate exposes rows, columns and visible-cell summaries to the virtualized
 /// table. Cache misses enqueue bounded background reads without doing file I/O here.
 pub(crate) struct Grid {
+    /// First-batch or manually adjusted widths; None until sizing completes for this session.
+    pub(crate) widths: Option<Vec<Pixels>>,
     /// Active typed result, owned here rather than in the tab while displayed.
     pub(crate) preview: Option<Preview>,
     /// Active SQL cache handle; retains its disk file and provides nonblocking row access.
@@ -53,7 +57,7 @@ impl EventEmitter<SortRequested> for GridEvents {}
 
 impl Grid {
     /// Return the active result schema, including an empty SQL query's schema.
-    fn schema(&self) -> Option<SchemaRef> {
+    pub(crate) fn schema(&self) -> Option<SchemaRef> {
         self.sql_snapshot
             .as_ref()
             .and_then(|state| state.schema.clone())
@@ -110,28 +114,19 @@ impl TableDelegate for Grid {
                 .movable(false);
         };
 
-        let mut column = Column::new(
-            field.name().clone(),
-            format!(
-                "{} · {}",
-                field.name(),
-                cells::type_label(field.data_type())
-            ),
-        )
-        .width(px(if index == 1 { 200. } else { 150. }))
-        .movable(false);
+        let mut column = Column::new(field.name().clone(), sizing::header(field))
+            .width(
+                self.widths
+                    .as_ref()
+                    .and_then(|widths| widths.get(index))
+                    .copied()
+                    .unwrap_or(px(150.)),
+            )
+            .min_width(px(64.))
+            .movable(false);
 
         // Nested values have no column-header ordering; SQL can extract a scalar.
-        if self.sortable
-            && !matches!(
-                field.data_type(),
-                DataType::List(_)
-                    | DataType::LargeList(_)
-                    | DataType::FixedSizeList(_, _)
-                    | DataType::Struct(_)
-                    | DataType::Map(_, _)
-            )
-        {
+        if self.sortable && sizing::sortable(field) {
             column = column.sort(match self.sort.filter(|sort| sort.column == index) {
                 Some(sort) if sort.descending => ColumnSort::Descending,
                 Some(_) => ColumnSort::Ascending,

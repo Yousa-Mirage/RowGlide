@@ -64,6 +64,7 @@ impl Workspace {
                         }
                         cx.notify();
                     });
+                    this.size_columns(cx);
                     // Finish the original click after its batch arrives, without another click.
                     if let Some((row, col)) = this.pending_cell
                         && let Some((batch, local)) = this.table.read(cx).delegate().row(row)

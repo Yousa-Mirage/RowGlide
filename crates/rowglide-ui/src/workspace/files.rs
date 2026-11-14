@@ -23,6 +23,7 @@ impl Workspace {
 
         let was_active = index == self.active_tab;
         if was_active {
+            self.sizing_task = None;
             self.cancellation.cancel();
             self.task = None;
             self.generation += 1;
@@ -34,6 +35,7 @@ impl Workspace {
             self.table.update(cx, |table, cx| {
                 table.clear_selection(cx);
                 let grid = table.delegate_mut();
+                grid.widths = None;
                 grid.preview = None;
                 grid.sql_result = None;
                 grid.sql_snapshot = None;

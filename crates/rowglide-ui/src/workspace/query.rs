@@ -157,6 +157,11 @@ impl Workspace {
         self.generation += 1;
         let request = self.request_key();
 
+        self.sizing_task = None;
+        if self.sql_open {
+            self.active_tab_mut().result_mut().widths = None;
+        }
+        let widths = self.active_tab_mut().result_mut().widths.clone();
         self.active_tab_mut().result_mut().initialized = true;
         self.active_tab_mut().result_mut().page = None;
         self.busy = true;
@@ -168,6 +173,7 @@ impl Workspace {
 
         self.table.update(cx, |table, cx| {
             table.clear_selection(cx);
+            table.delegate_mut().widths = widths;
             table.delegate_mut().loading = true;
             table.delegate_mut().preview = None;
             table.delegate_mut().sql_result = None;
@@ -225,6 +231,7 @@ impl Workspace {
                     }
                     Err(error) => this.finish_query_error(error, cx),
                 }
+                this.size_columns(cx);
                 cx.notify();
             });
         }));
@@ -252,6 +259,7 @@ impl Workspace {
     /// has already cleared its old result/page metadata. This does not join DuckDB on
     /// the GUI thread; background cursor cleanup releases engine resources.
     pub(super) fn cancel(&mut self, cx: &mut Context<Self>) {
+        self.sizing_task = None;
         self.cancellation.cancel();
         self.task = None;
         self.generation += 1;
@@ -276,6 +284,8 @@ impl Workspace {
     /// queries, records the cache recency stamp and trims inactive results. Arrow
     /// buffers move out of the shared table rather than being copied.
     pub(super) fn save_session(&mut self, cx: &mut Context<Self>) {
+        self.sizing_task = None;
+        let widths = self.table.read(cx).delegate().widths.clone();
         self.pending_cell = None;
         if self.busy {
             self.cancel(cx);
@@ -299,6 +309,7 @@ impl Workspace {
         tab.drafts = drafts;
         tab.sql = sql;
         let result = tab.result_mut();
+        result.widths = widths;
         result.preview = preview;
         result.sql_result = sql_result;
         result.selected = selected;
@@ -322,6 +333,7 @@ impl Workspace {
         self.sync_controls_from_tab(window, cx);
         let result = self.active_tab_mut().result_mut();
         let initial = !result.initialized;
+        let widths = result.widths.clone();
         let preview = result.preview.take();
         let sql_result = result.sql_result.take();
         let selected = result.selected.take();
@@ -335,6 +347,7 @@ impl Workspace {
         let sort = if sortable { self.query.sort } else { None };
         self.table.update(cx, |table, cx| {
             let grid = table.delegate_mut();
+            grid.widths = widths;
             grid.preview = preview;
             grid.sql_snapshot = sql_result.as_ref().map(|result| result.snapshot());
             grid.sql_result = sql_result;
@@ -348,6 +361,7 @@ impl Workspace {
         if initial && !self.sql_open {
             self.run(window, cx);
         }
+        self.size_columns(cx);
         cx.notify();
     }
 

@@ -222,6 +222,8 @@ impl TabState {
 /// absent after eviction or before a result exists. `initialized` distinguishes a never-run session
 /// from one requiring explicit reload. Page metadata is meaningful only for Browse.
 pub(super) struct ResultState {
+    /// Initial or manually resized column widths, retained across view switches and eviction.
+    pub(super) widths: Option<Vec<gpui_kit::Pixels>>,
     /// Inactive result buffers; moved into the shared table while active.
     pub(super) preview: Option<Preview>,
     /// Retained SQL result and temporary file, independently owned from the Browse page.
@@ -246,6 +248,7 @@ impl Default for ResultState {
     /// Initialize an unqueried result session with Ready status and no retained data.
     fn default() -> Self {
         Self {
+            widths: None,
             preview: None,
             sql_result: None,
             page: None,
@@ -517,6 +520,7 @@ mod tests {
         for (index, tab) in tabs.iter_mut().enumerate() {
             tab.sql = format!("draft {index}");
             tab.browse_result.touched = index as u64;
+            tab.browse_result.widths = Some(vec![gpui_kit::px(180.)]);
             tab.browse_result.page = Some(PageSummary {
                 range: BrowsePage::default(),
                 rows: 1,
@@ -543,6 +547,7 @@ mod tests {
         assert!(tabs[0].browse_result.selected.is_none());
         assert!(weak.upgrade().is_none());
         assert_eq!(tabs[0].sql, "draft 0");
+        assert_eq!(tabs[0].browse_result.widths, Some(vec![gpui_kit::px(180.)]));
         assert!(
             tabs[1..]
                 .iter()

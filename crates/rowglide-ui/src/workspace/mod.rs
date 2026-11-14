@@ -7,6 +7,7 @@ mod files;
 mod inspector;
 mod memory;
 mod query;
+mod sizing;
 mod sql;
 mod state;
 
@@ -65,6 +66,8 @@ pub(crate) struct Workspace {
     // Background request lifecycle and status.
     /// UI completion task for the current query; dropping it cancels the completion future.
     task: Option<Task<()>>,
+    /// One first-batch sizing task, dropped when the active session or query changes.
+    sizing_task: Option<sizing::SizingTask>,
     /// One-way cancellation token for the active query and its worker.
     cancellation: Cancellation,
     /// Independent cancellation token for native file inspection work.
@@ -108,6 +111,7 @@ impl Workspace {
         let table = cx.new(|cx| {
             TableState::new(
                 Grid {
+                    widths: None,
                     preview: None,
                     sql_result: None,
                     sql_snapshot: None,
@@ -160,6 +164,13 @@ impl Workspace {
                 if this.tabs.is_empty() {
                     return;
                 }
+                if let TableEvent::ColumnWidthsChanged(widths) = event {
+                    this.sizing_task = None;
+                    this.active_tab_mut().result_mut().widths = Some(widths.clone());
+                    table.update(cx, |table, _| {
+                        table.delegate_mut().widths = Some(widths.clone())
+                    });
+                }
                 if let TableEvent::DoubleClickedCell(row, col) = event {
                     this.close_file_info(cx);
                     this.selected = table.read(cx).delegate().row(*row).map(|(batch, r)| {
@@ -199,6 +210,7 @@ impl Workspace {
             _memory_task: Self::watch_memory(cx),
             clipboard: clipboard::ClipboardState::default(),
             task: None,
+            sizing_task: None,
             cancellation: Cancellation::default(),
             opening_cancel: Cancellation::default(),
             generation: 0,
