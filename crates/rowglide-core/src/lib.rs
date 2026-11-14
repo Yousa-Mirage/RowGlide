@@ -28,3 +28,6 @@ mod result;
 pub use result::{
     CacheLimits, CacheUsage, QueryResult, ResultLimits, ResultPhase, ResultSnapshot, ResultStore,
 };
+
+mod clipboard;
+pub use clipboard::{CopyError, CopyFormat, CopyLimits, serialize_cell};

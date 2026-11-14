@@ -20,6 +20,7 @@ async-channel = "2.5"
 dirs = "7"
 duckdb = { version = "=1.20000.1", features = ["bundled", "parquet"] }
 gpui-kit = "=0.9.1"
+serde_json = "1"
 sqlparser = "=0.64.0"
 sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 tempfile = "3"

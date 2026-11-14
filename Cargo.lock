@@ -5719,11 +5719,13 @@ name = "rowglide-core"
 version = "0.1.0"
 dependencies = [
  "arrow-array",
+ "arrow-cast",
  "arrow-ipc",
  "arrow-schema",
  "async-channel",
  "dirs 7.0.0",
  "duckdb",
+ "serde_json",
  "sqlparser",
  "tempfile",
  "thiserror 2.0.21",

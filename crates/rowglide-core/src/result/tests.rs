@@ -421,7 +421,10 @@ fn concurrent_results_share_budget_and_cleanup() -> Result<(), QueryError> {
     }
     assert_eq!(
         store.usage().memory_bytes,
-        results.iter().map(|r| r.snapshot().memory_bytes).sum()
+        results
+            .iter()
+            .map(|r| r.snapshot().memory_bytes)
+            .sum::<usize>()
     );
     drop(results);
     released(&store)
