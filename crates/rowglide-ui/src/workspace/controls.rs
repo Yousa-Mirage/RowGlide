@@ -197,6 +197,16 @@ impl Workspace {
                         self.status
                     )),
             )
+            .when_some(self.clipboard.message.clone(), |s, message| {
+                s.child(
+                    div()
+                        .max_w(px(360.))
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .text_xs()
+                        .child(message),
+                )
+            })
             .when(
                 !self.busy
                     && !self.table.read(cx).delegate().has_result()

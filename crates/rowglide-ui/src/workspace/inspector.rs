@@ -2,10 +2,12 @@
 
 use super::Workspace;
 use crate::cells;
+use crate::clipboard::{CopyTarget, copy_menu};
 use arrow_array::ArrayRef;
 use gpui_kit::component::{
     ActiveTheme, Sizable,
     button::{Button, ButtonVariants},
+    menu::ContextMenuExt,
 };
 use gpui_kit::*;
 
@@ -95,6 +97,8 @@ impl Workspace {
         let open = self.expanded.contains(&path);
         let has_children = !children.is_empty() && depth < 12;
         let click_path = path.clone();
+        let target = CopyTarget::Cell(array.clone(), row);
+        let events = self.table.read(cx).delegate().events.clone();
         let mut node = div().flex().flex_col().child(
             div()
                 .id(SharedString::from(path.clone()))
@@ -129,7 +133,10 @@ impl Workspace {
                         .text_sm()
                         .overflow_hidden()
                         .child(cells::summary(&array, row)),
-                ),
+                )
+                .context_menu(move |menu, _, _| {
+                    copy_menu(menu, Some(target.clone()), events.clone())
+                }),
         );
 
         if open && has_children {

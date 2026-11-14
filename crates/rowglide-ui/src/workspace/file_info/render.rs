@@ -170,11 +170,7 @@ impl Workspace {
                                 Button::new("copy-metadata-value")
                                     .small()
                                     .ghost()
-                                    .label(if self.file_info.copied {
-                                        "Copied"
-                                    } else {
-                                        "Copy full value"
-                                    })
+                                    .label("Copy full value")
                                     .on_click(
                                         cx.listener(|this, _, _, cx| this.copy_info_value(cx)),
                                     ),

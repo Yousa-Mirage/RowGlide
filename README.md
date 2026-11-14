@@ -22,6 +22,31 @@ single SELECT/WITH query against `current_file`, including aggregates and joins.
 The status bar shows whole-process resident memory (RSS), sampled in the background
 once per second and displayed in MiB/GiB. An unavailable reading appears as `—`.
 
+## Copying cells
+
+Right-click a table cell or an inspector node and choose **Copy value** or
+**Copy as JSON**. Copying uses the original Arrow value, including full strings
+and numeric precision; it never copies the truncated display summary. Metadata's
+**Copy full value** button uses the same background serialization path.
+
+- Value mode leaves scalar strings unquoted; JSON mode escapes and quotes them.
+- Lists become JSON arrays; structs become objects. Maps become arrays of
+  `{"key": ..., "value": ...}` pairs to preserve duplicate and non-string keys.
+- Dictionary values are decoded. Null becomes `null`; empty strings remain empty
+  in value mode and `""` in JSON mode.
+- Binary becomes reversible `0x` hexadecimal, including metadata binary values
+  whose preview may show readable UTF-8. Dates/times, durations, decimals and
+  nonfinite floats use Arrow text, quoted in JSON mode. Finite numbers retain
+  full precision; JSON consumers must support large integers to preserve them.
+- Unsupported types and duplicate struct field names produce an explicit error.
+
+Serialization runs off the GUI thread, with a 16 MiB output limit and maximum
+nesting depth of 64. SQL cache misses are reread asynchronously, with a 30-second
+copy timeout. Menus retain the original target across tab/query changes. A new
+copy cancels the previous copy; closing the workspace cancels pending work.
+Failure leaves the clipboard unchanged. Copy progress and errors appear separately
+from query status; values are never silently truncated.
+
 Browse uses explicit pages: **Limit** is the page size (default 1,000) and
 **Offset** is the zero-based start. **Previous / Next** replace the page and
 reset vertical scrolling. Apply edited controls before navigating; clearing

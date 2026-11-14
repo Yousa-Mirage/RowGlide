@@ -1,10 +1,12 @@
-//! Table adapter for Browse pages, streamed SQL results and column-sort events.
+//! Table adapter for Browse pages, streamed SQL results, sorting and cell copying.
 
 use crate::cells;
+use crate::clipboard::{CopyTarget, copy_menu};
 use arrow_array::RecordBatch;
 use arrow_schema::{DataType, SchemaRef};
 use gpui_kit::component::{
     ActiveTheme,
+    menu::ContextMenuExt,
     table::{Column, ColumnSort, TableDelegate, TableState},
 };
 use gpui_kit::*;
@@ -37,14 +39,14 @@ pub(crate) struct Grid {
     pub(crate) sortable: bool,
     /// Applied source-column sort used to render header indicators.
     pub(crate) sort: Option<Sort>,
-    /// Event source used to request backend sorting from the workspace.
+    /// Event source forwarding backend sorting and captured copy requests.
     pub(crate) events: Entity<GridEvents>,
 }
 
-/// Lightweight GPUI event entity forwarding sort requests to the workspace.
+/// Lightweight GPUI event entity forwarding sort and copy requests to the workspace.
 ///
 /// Separating the event source from TableState allows the workspace to subscribe
-/// to user sorting without coupling the delegate to query execution.
+/// to user operations without coupling the delegate to query or clipboard execution.
 pub(crate) struct GridEvents;
 
 impl EventEmitter<SortRequested> for GridEvents {}
@@ -178,8 +180,9 @@ impl TableDelegate for Grid {
     /// Render one visible cell using a compact Arrow summary and ellipsis overflow.
     ///
     /// `row` is relative to the retained page/result and `col` is a schema column index
-    /// supplied by TableState. Missing rows render blank; summaries equal to `null` use
-    /// the muted color. Rendering performs no backend or disk access.
+    /// supplied by TableState. Missing SQL rows show a loading label; `null` summaries use
+    /// the muted color. Each menu retains its original typed target. Rendering performs
+    /// no synchronous backend or disk access.
     fn render_td(
         &mut self,
         row: usize,
@@ -203,12 +206,23 @@ impl TableDelegate for Grid {
             cx.theme().foreground
         };
 
+        let target = if let Some(result) = &self.sql_result {
+            Some(CopyTarget::Sql(result.clone(), row, col))
+        } else {
+            self.row(row)
+                .map(|(batch, local)| CopyTarget::Cell(batch.column(col).clone(), local))
+        };
+        let events = self.events.clone();
+
         div()
+            .id(SharedString::from(format!("cell-{row}-{col}")))
+            .size_full()
             .text_sm()
             .text_color(color)
             .overflow_hidden()
             .text_ellipsis()
             .child(value)
+            .context_menu(move |menu, _, _| copy_menu(menu, target.clone(), events.clone()))
     }
 
     /// Return the same compact summary used by the visible cell as a shared label.

@@ -1,5 +1,6 @@
 //! Workspace state, event wiring, and top-level layout.
 
+mod clipboard;
 mod controls;
 mod file_info;
 mod files;
@@ -57,6 +58,9 @@ pub(crate) struct Workspace {
     memory_bytes: Option<u64>,
     /// Owns periodic sampling independently of queries; dropping the workspace cancels it.
     _memory_task: Task<()>,
+
+    /// Copy worker and feedback, independent of query lifecycle and per-tab state.
+    clipboard: clipboard::ClipboardState,
 
     // Background request lifecycle and status.
     /// UI completion task for the current query; dropping it cancels the completion future.
@@ -129,6 +133,12 @@ impl Workspace {
         });
 
         let mut subscriptions = vec![
+            cx.subscribe(
+                &events,
+                |this, _, event: &crate::clipboard::CopyRequested, cx| {
+                    this.copy_cell(event.clone(), cx);
+                },
+            ),
             cx.subscribe_in(
                 &events,
                 window,
@@ -184,6 +194,7 @@ impl Workspace {
             _subscriptions: subscriptions,
             memory_bytes: None,
             _memory_task: Self::watch_memory(cx),
+            clipboard: clipboard::ClipboardState::default(),
             task: None,
             cancellation: Cancellation::default(),
             opening_cancel: Cancellation::default(),

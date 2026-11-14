@@ -65,8 +65,6 @@ pub(super) struct InfoView {
     revision: u64,
     /// Detail-only error shown with a retry action; never changes the main query status.
     error: Option<String>,
-    /// Brief confirmation after copying the complete selected value.
-    copied: bool,
     /// Keeps metadata cell selection wired to this view's preview.
     _selection: Subscription,
 }
@@ -82,7 +80,6 @@ impl InfoView {
         let selection = cx.subscribe(&table, |this, _, event, cx| {
             if let TableEvent::SelectCell(row, column) = event {
                 this.file_info.selected = Some((*row, *column));
-                this.file_info.copied = false;
                 cx.notify();
             }
         });
@@ -94,7 +91,6 @@ impl InfoView {
             request: None,
             revision: 0,
             error: None,
-            copied: false,
             _selection: selection,
         }
     }
@@ -108,7 +104,6 @@ impl InfoView {
         self.request = None;
         self.selected = None;
         self.error = None;
-        self.copied = false;
         self.table.update(cx, |table, cx| {
             table.clear_selection(cx);
             table.delegate_mut().page = None;
@@ -239,22 +234,23 @@ impl Workspace {
         self.refresh_file_info(cx);
     }
 
-    /// Copy the entire selected text, scalar or reversible binary hex value, never its preview.
+    /// Copy the original metadata cell through the shared bounded background serializer.
+    /// Binary values use reversible hexadecimal; previews remain human-readable text.
     fn copy_info_value(&mut self, cx: &mut Context<Self>) {
-        let result = self
+        let target = self
             .file_info
             .selected
             .and_then(|(row, col)| self.file_info.table.read(cx).delegate().cell(row, col))
-            .map(|(array, row)| value_text(array, row, None));
-        match result {
-            Some(Ok(text)) => {
-                cx.write_to_clipboard(ClipboardItem::new_string(text));
-                self.file_info.copied = true;
-            }
-            Some(Err(error)) => self.file_info.error = Some(error.to_string()),
-            None => {}
+            .map(|(array, row)| crate::clipboard::CopyTarget::Cell(array.clone(), row));
+        if let Some(target) = target {
+            self.copy_cell(
+                crate::clipboard::CopyRequested {
+                    target,
+                    format: rowglide_core::CopyFormat::Value,
+                },
+                cx,
+            );
         }
-        cx.notify();
     }
 }
 

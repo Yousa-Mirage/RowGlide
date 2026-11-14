@@ -4,6 +4,7 @@
 //! modules stay private; concrete engine selection belongs to `rowglide-app`.
 
 mod cells;
+mod clipboard;
 mod table;
 mod workspace;
 
