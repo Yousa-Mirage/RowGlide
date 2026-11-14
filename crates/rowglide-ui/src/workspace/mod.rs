@@ -95,7 +95,7 @@ impl Workspace {
     /// Create the shared controls, virtualized table and event subscriptions.
     ///
     /// Wraps existing backend sources in tab state and automatically loads the first
-    /// Browse page when available. Sorting resets the applied offset; cell selection
+    /// Browse page when available. Sorting resets the applied offset; double-clicking a cell
     /// retains the Arrow array needed by the inspector. Empty registries start in the
     /// file-opening view. File inspection and query execution use background work.
     pub(crate) fn new(
@@ -157,7 +157,7 @@ impl Workspace {
                 },
             ),
             cx.subscribe(&table, |this, table, event, cx| {
-                if let TableEvent::SelectCell(row, col) = event {
+                if let TableEvent::DoubleClickedCell(row, col) = event {
                     this.close_file_info(cx);
                     this.selected = table.read(cx).delegate().row(*row).map(|(batch, r)| {
                         (

@@ -253,4 +253,5 @@ reversible `0x` hexadecimal. Null and empty values remain distinct. File tabs re
 their chosen panel section/page during the session, while only the active detail
 page is cached. Close/switch cancels old requests; errors offer **Retry** without
 replacing Browse/SQL results. The panel shares the right-hand area with the cell
-inspector: selecting a data cell returns to the inspector.
+inspector: double-clicking a data cell opens the inspector. A single click only
+changes the table selection.
