@@ -254,14 +254,7 @@ impl Workspace {
         if let Some(summary) = &source.parquet {
             for (label, value) in [
                 ("Format", "Parquet".to_string()),
-                (
-                    "File size",
-                    format!(
-                        "{} bytes ({:.2} MiB)",
-                        summary.file_bytes,
-                        summary.file_bytes as f64 / (1024. * 1024.)
-                    ),
-                ),
+                ("File size", format_file_size(summary.file_bytes)),
                 (
                     "Rows",
                     source
@@ -297,4 +290,18 @@ impl Workspace {
         }
         content.child(div().mt_2().text_xs().text_color(rgb(0x6c7b73)).child("Source facts captured when opened. Filters and SQL do not change these counts. Keep the file unchanged while it is open. Compression and statistics are listed per column chunk under Row groups."))
     }
+}
+
+/// Format source bytes with one decimal using decimal KB, MB or GB.
+/// Choose the unit before rounding: below 1 MB uses KB, below 1 GB uses MB,
+/// and larger files use GB. Even files smaller than 1 KB remain expressed in KB.
+fn format_file_size(bytes: u64) -> String {
+    let (divisor, unit) = if bytes < 1_000_000 {
+        (1_000., "KB")
+    } else if bytes < 1_000_000_000 {
+        (1_000_000., "MB")
+    } else {
+        (1_000_000_000., "GB")
+    };
+    format!("{:.1} {unit}", bytes as f64 / divisor)
 }
