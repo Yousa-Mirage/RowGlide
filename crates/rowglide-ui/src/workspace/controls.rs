@@ -101,7 +101,6 @@ impl Workspace {
                 toolbar.child(
                     Button::new("file-info-toggle")
                         .small()
-                        .ghost()
                         .label(if self.active_tab().info.open {
                             "Hide info"
                         } else {

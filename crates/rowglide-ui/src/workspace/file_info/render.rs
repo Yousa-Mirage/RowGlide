@@ -67,11 +67,12 @@ impl Workspace {
                 TabBar::new("file-info-sections")
                     .small()
                     .underline()
+                    .px_3()
                     .selected_index(index)
                     .children(
                         ["Overview", "Schema", "Row groups", "Metadata"]
                             .into_iter()
-                            .map(|name| Tab::new().label(name)),
+                            .map(|name| Tab::new().label(name).px_2()),
                     )
                     .on_click(cx.listener(|this, index: &usize, _, cx| {
                         this.select_info_section(*index, cx)
@@ -141,12 +142,19 @@ impl Workspace {
             );
         } else {
             panel = panel.child(
-                div().flex_1().min_h_0().min_w_0().child(
-                    DataTable::new(&self.file_info.table)
-                        .small()
-                        .stripe(false)
-                        .bordered(false),
-                ),
+                // Keep wide metadata inside the panel's own scrollable table viewport.
+                div()
+                    .flex_1()
+                    .w_full()
+                    .min_h_0()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .child(
+                        DataTable::new(&self.file_info.table)
+                            .small()
+                            .stripe(false)
+                            .bordered(false),
+                    ),
             );
         }
         if let Some((row, col)) = self.file_info.selected

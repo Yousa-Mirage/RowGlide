@@ -20,6 +20,40 @@ pub(super) struct MetadataGrid {
 }
 
 impl MetadataGrid {
+    /// Measure bounded page previews and the header using the UI font.
+    /// Widths are computed on table refresh, not on each rendered cell. Multiline
+    /// values use their widest line; the column separately caps excessive widths.
+    fn content_width(&self, column: usize, cx: &App) -> Pixels {
+        let header = self
+            .page
+            .as_ref()
+            .and_then(|page| page.preview.schema.fields().get(column))
+            .map_or_else(String::new, |field| field.name().replace('_', " "));
+        let labels = std::iter::once(header)
+            .chain((0..self.rows_count(cx)).map(|row| self.label(row, column)));
+        let text_system = WindowTextSystem::new(cx.text_system().clone());
+        let mut width = px(0.);
+        for label in labels {
+            for line in label.lines() {
+                let run = TextRun {
+                    len: line.len(),
+                    font: font(cx.theme().font_family.clone()),
+                    color: cx.theme().foreground,
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                };
+                // Use the header's 14 px font as a conservative bound for 12 px cells.
+                width = width.max(
+                    text_system
+                        .shape_line(line.to_owned().into(), px(14.), &[run], None)
+                        .width,
+                );
+            }
+        }
+        width
+    }
+
     /// Borrow one typed cell by page-local coordinates; stale/out-of-range selections are absent.
     pub(super) fn cell(&self, row: usize, column: usize) -> Option<(&ArrayRef, usize)> {
         let (batch, local) = self.page.as_ref()?.preview.row(row)?;
@@ -48,22 +82,30 @@ impl TableDelegate for MetadataGrid {
         self.page.as_ref().map_or(0, |page| page.preview.rows)
     }
 
-    /// Build nonsortable metadata headers; backend relation order defines pagination.
-    fn column(&self, index: usize, _: &App) -> Column {
+    /// Fit headers and current-page previews within readable width bounds.
+    /// Wide relations remain horizontally scrollable; backend order defines pagination.
+    fn column(&self, index: usize, cx: &App) -> Column {
         let name = self
             .page
             .as_ref()
             .and_then(|page| page.preview.schema.fields().get(index))
             .map_or("Unavailable", |field| field.name().as_str());
         Column::new(format!("metadata-{index}"), name.replace('_', " "))
-            .width(px(
-                if matches!(name, "name" | "path_in_schema" | "key" | "value") {
-                    220.
-                } else {
-                    150.
-                },
-            ))
+            .width((self.content_width(index, cx) + px(24.)).clamp(px(64.), px(320.)))
+            .min_width(px(64.))
+            .max_width(px(640.))
             .movable(false)
+    }
+
+    /// Refit a manually resized column on double-click, including the retained page only.
+    /// The table adds cell padding and applies the column's minimum and maximum width.
+    fn fit_column(
+        &mut self,
+        column: usize,
+        _: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Option<Pixels> {
+        Some(self.content_width(column, cx))
     }
 
     /// Show the component's loading indicator during a detail request.
