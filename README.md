@@ -201,3 +201,16 @@ debug information. Panic unwinding is retained.
 ## License
 
 Copyright 2026 Yousa-Mirage. Licensed under Apache-2.0; see [LICENSE](LICENSE).
+
+## Parquet inspection
+
+Opening a Parquet file reads its exact row count, row-group count, file size and
+producer/version from the footer, alongside the Arrow schema. This does not run
+a data COUNT scan. Top-level Arrow columns and Parquet leaf columns are distinct.
+
+The backend exposes paged original schema, row-group column chunks and raw file
+key/value metadata. Pages retain at most 100 records and 8 MiB of Arrow buffers;
+oversized metadata fails explicitly. Missing statistics stay null and minimum/maximum
+exactness flags are preserved. DuckDB may still parse the full footer internally.
+Overview information is captured at opening; detail requests read the current file.
+Files should remain unchanged while open. CSV inspection remains unchanged.

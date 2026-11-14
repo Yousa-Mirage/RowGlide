@@ -18,6 +18,8 @@ pub struct Source {
     pub format: &'static str,
     /// Exact source row count when known without a count scan; otherwise unknown.
     pub rows: Option<usize>,
+    /// Footer summary for real Parquet sources; absent for CSV and simulated files.
+    pub parquet: Option<crate::ParquetSummary>,
     /// Short source description, independent of query status or filtering.
     pub description: &'static str,
 }

@@ -44,6 +44,7 @@ impl Backend for MockBackend {
                 name: "customers.parquet".into(),
                 format: "PARQUET",
                 rows: Some(50000),
+                parquet: None,
                 description: "Customer profiles with nested attributes",
             },
             Source {
@@ -51,6 +52,7 @@ impl Backend for MockBackend {
                 name: "orders.csv".into(),
                 format: "CSV",
                 rows: Some(2400),
+                parquet: None,
                 description: "Order activity · scalar columns only",
             },
             Source {
@@ -58,6 +60,7 @@ impl Backend for MockBackend {
                 name: "empty.parquet".into(),
                 format: "PARQUET",
                 rows: Some(0),
+                parquet: None,
                 description: "An empty dataset with a complete schema",
             },
         ]

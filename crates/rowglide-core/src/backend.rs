@@ -119,6 +119,20 @@ pub trait Backend: Send + Sync {
             "This backend cannot open local files".into(),
         ))
     }
+    /// Read one page of Parquet footer details on a background worker.
+    /// Does not modify Browse/SQL state. Unsupported backends return an explicit error;
+    /// implementations must honor cancellation and bound retained metadata buffers.
+    fn parquet_metadata(
+        &self,
+        _source: usize,
+        _request: crate::ParquetRequest,
+        _cancel: Cancellation,
+    ) -> Result<crate::ParquetPage, QueryError> {
+        Err(QueryError::Invalid(
+            "Parquet metadata is unavailable for this source".into(),
+        ))
+    }
+
     /// Start a query and return its owned, pull-based result cursor.
     ///
     /// Startup may block while inspecting the result schema or executing the query.

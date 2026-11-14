@@ -1,6 +1,6 @@
 //! Local-file registry and resource-limited DuckDB connections.
 
-use super::stream;
+use super::{parquet, stream};
 use crate::{Backend, BatchCursor, Cancellation, Query, QueryError, Source};
 use arrow_schema::SchemaRef;
 use duckdb::{Config, Connection};
@@ -77,12 +77,11 @@ pub(super) fn register(conn: &Connection, path: &Path, format: &str) -> Result<(
         .to_str()
         .ok_or_else(|| QueryError::Invalid("File path must be valid UTF-8".into()))?;
     conn.execute("SET VARIABLE source_path = ?", [path])?;
-    let sql = if format == "PARQUET" {
-        "CREATE VIEW current_file AS SELECT * FROM read_parquet(getvariable('source_path'))"
+    if format == "PARQUET" {
+        parquet::register(conn)
     } else {
-        "CREATE VIEW current_file AS SELECT * FROM read_csv(getvariable('source_path'), sample_size=20480)"
-    };
-    Ok(conn.execute_batch(sql)?)
+        Ok(conn.execute_batch("CREATE VIEW current_file AS SELECT * FROM read_csv(getvariable('source_path'), sample_size=20480)")?)
+    }
 }
 
 /// Wait for exclusive engine access while checking cancellation between attempts.
@@ -124,7 +123,7 @@ impl Backend for DuckDbBackend {
     /// the engine gate using a zero-row query to obtain schema without counting rows.
     /// The registry is checked again before insertion to handle concurrent opens.
     /// Errors include unsupported formats, missing files, cancellation and DuckDB
-    /// inspection failures. The returned source has an unknown row count.
+    /// inspection failures. Parquet totals come from the footer; CSV totals remain unknown.
     fn open(&self, path: &Path, cancel: Cancellation) -> Result<Source, QueryError> {
         cancel.check()?;
         let path = path.canonicalize()?;
@@ -157,6 +156,13 @@ impl Backend for DuckDbBackend {
         register(&conn, &path, format)?;
         let mut statement = conn.prepare("SELECT * FROM current_file LIMIT 0")?;
         let schema = statement.stream_arrow([])?.get_schema();
+        drop(statement);
+        let (rows, parquet) = if format == "PARQUET" {
+            let (rows, summary) = parquet::summary(&conn, schema.fields().len())?;
+            (Some(rows), Some(summary))
+        } else {
+            (None, None)
+        };
         cancel.check()?;
         let mut files = self.registry()?;
         if let Some(file) = files.iter().find(|file| file.path == path) {
@@ -169,7 +175,8 @@ impl Backend for DuckDbBackend {
                 |name| name.to_string_lossy().into_owned(),
             ),
             format,
-            rows: None,
+            rows,
+            parquet,
             description: "Local file",
         };
         files.push(FileSource {
@@ -178,6 +185,36 @@ impl Backend for DuckDbBackend {
             schema,
         });
         Ok(info)
+    }
+
+    /// Inspect one bounded footer relation under the same engine gate as data queries.
+    /// Uses its own cancellation token and connection, so detail failures do not replace
+    /// user data. File information reflects the file at the time of each read.
+    fn parquet_metadata(
+        &self,
+        source: usize,
+        request: crate::ParquetRequest,
+        cancel: Cancellation,
+    ) -> Result<crate::ParquetPage, QueryError> {
+        cancel.check()?;
+        let file = self
+            .registry()?
+            .get(source)
+            .cloned()
+            .ok_or_else(|| QueryError::Invalid("File is no longer available".into()))?;
+        if file.info.parquet.is_none() {
+            return Err(QueryError::Invalid(
+                "File details require a Parquet source".into(),
+            ));
+        }
+        let _guard = lock_engine(&self.gate, &cancel)?;
+        let temp = crate::temporary::Directory::create()?;
+        let conn = connection(temp.path())?;
+        let _interrupt = stream::Interrupt::new(&conn, cancel.clone())?;
+        register(&conn, &file.path, file.info.format)?;
+        let result = parquet::page(&conn, request, &cancel);
+        cancel.check()?;
+        result
     }
 
     /// Resolve a registered source and start its background Arrow stream.
