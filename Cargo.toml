@@ -1,12 +1,39 @@
 [workspace]
-members = ["crates/rowglide-app", "crates/rowglide-core", "crates/rowglide-ui"]
 resolver = "3"
+members = ["crates/rowglide-app", "crates/rowglide-core", "crates/rowglide-ui"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 publish = false
+
+[workspace.dependencies]
+rowglide-core = { path = "crates/rowglide-core" }
+rowglide-ui = { path = "crates/rowglide-ui" }
+
+arrow-array = "60"
+arrow-cast = "60"
+arrow-ipc = "60"
+arrow-schema = "60"
+async-channel = "2.5"
+dirs = "7"
+duckdb = { version = "=1.20000.1", features = ["bundled", "parquet"] }
+gpui-kit = "=0.9.1"
+sqlparser = "=0.64.0"
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
+tempfile = "3"
+thiserror = "2"
+
+[workspace.lints.clippy]
+expect_used = "deny"
+unwrap_used = "deny"
+
+# Lint configuration
+[workspace.lints.rust]
+unreachable_pub = "deny"
+unsafe_code = "forbid"
+unused_qualifications = "deny"
 
 # Project-level information, not inherited Cargo package fields.
 [workspace.metadata.project]
@@ -19,39 +46,12 @@ readme = "README.md"
 keywords = ["parquet", "csv", "arrow", "gpui", "data-viewer"]
 categories = ["visualization", "gui"]
 
-[workspace.dependencies]
-rowglide-ui = { path = "crates/rowglide-ui" }
-rowglide-core = { path = "crates/rowglide-core" }
-
-gpui-kit = "=0.9.1"
-duckdb = { version = "=1.20000.1", features = ["bundled", "parquet"] }
-arrow-cast = "60"
-tempfile = "3"
-dirs = "7"
-sqlparser = "=0.64.0"
-arrow-array = "60"
-arrow-schema = "60"
-arrow-ipc = "60"
-async-channel = "2.5"
-thiserror = "2"
-sysinfo = { version = "0.40", default-features = false, features = ["system"] }
-
-# Lint configuration
-[workspace.lints.rust]
-unsafe_code = "forbid"
-unused_qualifications = "deny"
-unreachable_pub = "deny"
-
-[workspace.lints.clippy]
-unwrap_used = "deny"
-expect_used = "deny"
-
 # Build configuration
 [profile.dev]
 debug = 0
 
 [profile.release]
 opt-level = 3
+strip = "debuginfo"
 lto = "thin"
 codegen-units = 1
-strip = "debuginfo"

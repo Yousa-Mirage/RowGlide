@@ -1,35 +1,31 @@
+alias check := lint
+alias doc := document
+
 # List available development commands.
 default:
     @just --list
 
-# Run the native application with DuckDB.
+# Run the application in dev mode.
 dev:
     cargo run -p rowglide-app --bin rowglide
 
-# Run workspace tests, including documentation tests.
-test:
-    cargo test --workspace
+# Run the application in release mode.
+release:
+    cargo run -p rowglide-app --bin rowglide --release
 
-# Treat every Clippy warning as an error, including in tests.
+# Run all tests.
+test:
+    cargo test --all
+
+# Format and clippy.
 lint:
     cargo fmt --all
     cargo clippy --workspace --all-targets -- -D warnings
 
-# Build the local macOS development bundle (no signing or installation).
+# Build the local macOS development bundle.
 bundle-macos:
     sh scripts/bundle-macos.sh
 
-# Compile all workspace targets.
-check:
-    cargo check --workspace --all-targets
-
-# Format Rust sources.
-fmt:
-    cargo fmt --all
-
-# Verify source formatting.
-fmt-check:
-    cargo fmt --all -- --check
-
-# Run the complete local verification suite.
-ci: fmt-check check test lint
+# Document the codebase.
+document:
+    cargo doc --workspace
