@@ -419,3 +419,77 @@ fn tab_navigation_reveals_overflow(cx: &mut TestAppContext) {
     })();
     assert!(outcome.is_ok(), "{outcome:?}");
 }
+
+/// Invalid filter input never starts work; changing conditions resets deep offsets on success.
+#[gpui_kit::test]
+async fn filter_apply_preserves_old_page_until_success(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestAppContextExt;
+    let outcome = async {
+        let (window, view) = fixture(cx)?;
+        cx.update_window(window, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                view.active_tab_mut()
+                    .drafts
+                    .filters
+                    .push(super::state::FilterDraft {
+                        id: 1,
+                        column: 3,
+                        data_type: arrow_schema::DataType::Float64,
+                        op: Some(rowglide_core::CompareOp::GreaterThan),
+                        negated: false,
+                        value: "invalid".into(),
+                    });
+                let rows = view
+                    .table
+                    .read(cx)
+                    .delegate()
+                    .preview
+                    .as_ref()
+                    .map(|p| p.rows);
+                view.apply_filter(window, cx);
+                assert!(!view.busy);
+                assert!(view.error);
+                assert_eq!(
+                    view.table
+                        .read(cx)
+                        .delegate()
+                        .preview
+                        .as_ref()
+                        .map(|p| p.rows),
+                    rows
+                );
+                assert!(view.active_tab().browse.filters.is_empty());
+                view.active_tab_mut().drafts.filters[0].value = "100".into();
+                view.offset
+                    .update(cx, |state, cx| state.set_value("5000", window, cx));
+                view.apply_filter(window, cx);
+                assert!(view.busy);
+                assert_eq!(view.query.offset, 0);
+                assert_eq!(
+                    view.table
+                        .read(cx)
+                        .delegate()
+                        .preview
+                        .as_ref()
+                        .map(|p| p.rows),
+                    rows
+                );
+                assert!(view.active_tab().browse.filters.is_empty());
+            });
+        })?;
+        cx.wait_for(window, std::time::Duration::from_secs(5), |_, cx| {
+            !view.read(cx).busy
+        })
+        .await;
+        cx.update(|cx| {
+            let view = view.read(cx);
+            assert!(!view.error, "{}", view.status);
+            assert_eq!(view.active_tab().browse.filters.len(), 1);
+            assert_eq!(view.active_tab().browse.offset, 0);
+            assert_eq!(view.offset.read(cx).value().as_ref(), "0");
+        });
+        Ok::<(), Box<dyn std::error::Error>>(())
+    }
+    .await;
+    assert!(outcome.is_ok(), "{outcome:?}");
+}

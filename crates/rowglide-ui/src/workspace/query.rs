@@ -49,6 +49,7 @@ impl Workspace {
     /// the user was editing.
     pub(super) fn browse_draft(&self, cx: &App) -> BrowseDraft {
         BrowseDraft {
+            filters: self.active_tab().drafts.filters.clone(),
             search: self.search.read(cx).value().to_string(),
             limit: self.limit.read(cx).value().to_string(),
             offset: self.offset.read(cx).value().to_string(),
@@ -57,7 +58,7 @@ impl Workspace {
 
     /// Validate and apply Browse drafts, normalize range inputs and start a new query.
     ///
-    /// Preserves the existing sort and honors the explicit offset. Invalid drafts only
+    /// Preserves sorting and honors the offset unless search or predicates change. Invalid drafts only
     /// update the error/status display; they do not replace the applied query or result.
     /// Calls made in SQL mode are ignored.
     pub(super) fn apply_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -65,24 +66,55 @@ impl Workspace {
             return;
         }
         let draft = self.browse_draft(cx);
-        match draft.page() {
-            Ok(page) => {
-                self.query.limit = Some(page.limit());
-                self.query.offset = page.offset();
-                self.query.search = draft.search.clone();
-                self.query.sql = None;
-                self.active_tab_mut().browse = self.query.clone();
-                self.active_tab_mut().drafts = BrowseDraft {
-                    limit: page.limit().to_string(),
-                    offset: page.offset().to_string(),
-                    ..draft
-                };
-                self.sync_controls_from_tab(window, cx);
+        let validation = (|| -> Result<Query, QueryError> {
+            let page = draft.page()?;
+            let conditions = draft
+                .filters
+                .iter()
+                .enumerate()
+                .map(|(index, row)| {
+                    row.condition()
+                        .map_err(|source| rowglide_core::FilterError::Condition {
+                            index: index + 1,
+                            source: Box::new(source),
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let filters =
+                rowglide_core::validate_filters(&self.active_tab().source.schema, &conditions)?;
+            let search = draft.search.trim().to_owned();
+            if !search.is_empty()
+                && !self
+                    .active_tab()
+                    .source
+                    .schema
+                    .fields()
+                    .iter()
+                    .any(|field| {
+                        rowglide_core::filter_kind(field.data_type())
+                            == Some(rowglide_core::FilterKind::Text)
+                    })
+            {
+                return Err(rowglide_core::FilterError::NoTextColumns.into());
+            }
+            let applied = &self.active_tab().browse;
+            let changed = search != applied.search || filters != applied.filters;
+            Ok(Query {
+                search,
+                filters,
+                limit: Some(page.limit()),
+                offset: if changed { 0 } else { page.offset() },
+                ..applied.clone()
+            })
+        })();
+        match validation {
+            Ok(query) => {
+                self.query = query;
                 self.run(window, cx);
             }
             Err(error) => {
-                self.error = true;
                 self.status = crate::i18n::query_error(&error);
+                self.error = true;
                 cx.notify();
             }
         }
@@ -116,7 +148,7 @@ impl Workspace {
         match range {
             Ok(page) => {
                 self.query.offset = page.offset();
-                self.active_tab_mut().browse = self.query.clone();
+
                 self.active_tab_mut().drafts.offset = page.offset().to_string();
                 self.offset.update(cx, |state, cx| {
                     state.set_value(page.offset().to_string(), window, cx)
@@ -133,8 +165,8 @@ impl Workspace {
 
     /// Restore empty filter text, the default page size and offset zero in the controls.
     ///
-    /// This updates GUI text only. The Reset handler separately resets the applied
-    /// query and saved drafts before starting the corresponding request.
+    /// This updates GUI text only. Reset prepares a candidate and saved drafts;
+    /// applied state changes only after successful execution.
     pub(super) fn reset_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search
             .update(cx, |state, cx| state.set_value("", window, cx));
@@ -158,11 +190,14 @@ impl Workspace {
             cx.notify();
             return;
         }
+        if !self.sql_open {
+            self.run_browse(window, cx);
+            return;
+        }
         self.cancellation.cancel();
         self.task = None;
         self.cancellation = Cancellation::default();
         self.generation += 1;
-        let request = self.request_key();
 
         self.sizing_task = None;
         if self.sql_open {
@@ -189,56 +224,104 @@ impl Workspace {
             cx.notify();
         });
 
-        if self.sql_open {
-            if let Err(error) = self.start_sql(cx) {
-                self.finish_query_error(error, cx);
-            }
-            cx.notify();
-            return;
+        if let Err(error) = self.start_sql(cx) {
+            self.finish_query_error(error, cx);
         }
+        cx.notify();
+    }
 
+    /// Execute a candidate Browse query while retaining the last successful page and selection.
+    /// Only a complete current response commits applied state. Unchanged editor drafts are
+    /// normalized on success; text edited while work runs remains untouched.
+    fn run_browse(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.cancellation.cancel();
+        self.task = None;
+        self.cancellation = Cancellation::default();
+        self.generation += 1;
+        let key = self.request_key();
+        let candidate = self.query.clone();
+        let draft = self.browse_draft(cx);
+        let normalize = (candidate.sort == self.active_tab().browse.sort
+            || draft.matches_query(&self.active_tab().browse))
+            && draft.search.trim() == candidate.search
+            && draft
+                .filters
+                .iter()
+                .map(super::state::FilterDraft::condition)
+                .collect::<Result<Vec<_>, _>>()
+                .and_then(|conditions| {
+                    rowglide_core::validate_filters(&self.active_tab().source.schema, &conditions)
+                })
+                .is_ok_and(|conditions| conditions == candidate.filters);
+        self.active_tab_mut().browse_result.initialized = true;
+        self.busy = true;
+        self.error = false;
+        self.status = tr_string!("query.loading");
         let backend = self.backend.clone();
-        let query = self.query.clone();
         let cancel = self.cancellation.clone();
+        let query = candidate.clone();
         let work = cx.background_executor().spawn(async move {
             let started = Instant::now();
-            let result = load_browse(backend.as_ref(), query, &cancel);
-            (result, started.elapsed())
+            (
+                load_browse(backend.as_ref(), query, &cancel),
+                started.elapsed(),
+            )
         });
-
         self.task = Some(cx.spawn_in(window, async move |this, cx| {
             let (result, elapsed) = work.await;
-            let _ = this.update(cx, |this, cx| {
-                // Discard results from cancelled or superseded queries.
-                if request != this.request_key() {
+            let _ = this.update_in(cx, |this, window, cx| {
+                if key != this.request_key() {
                     return;
                 }
-
                 this.busy = false;
                 match result {
                     Ok((preview, page)) => {
-                        this.active_tab_mut().result_mut().page = Some(page);
+                        if normalize && this.browse_draft(cx) == draft {
+                            let tab = this.active_tab_mut();
+                            tab.drafts.search = candidate.search.clone();
+                            tab.drafts.limit = candidate
+                                .limit
+                                .unwrap_or(BrowsePage::default().limit())
+                                .to_string();
+                            tab.drafts.offset = candidate.offset.to_string();
+                            for (row, condition) in
+                                tab.drafts.filters.iter_mut().zip(&candidate.filters)
+                            {
+                                if let rowglide_core::FilterCondition::Compare { value, .. } =
+                                    condition
+                                {
+                                    row.value = value.input();
+                                }
+                            }
+                            this.sync_controls_from_tab(window, cx);
+                        }
+                        this.active_tab_mut().browse = candidate.clone();
+                        this.active_tab_mut().browse_result.page = Some(page);
                         this.status =
                             format!("{} · {:.0} ms", page.label(), elapsed.as_secs_f64() * 1000.);
+                        this.selected = None;
+                        this.pending_cell = None;
+                        this.expanded.clear();
+                        let widths = this.active_tab().browse_result.widths.clone();
                         this.table.update(cx, |table, cx| {
+                            table.clear_selection(cx);
                             let grid = table.delegate_mut();
                             grid.preview = Some(preview);
+                            grid.sql_result = None;
+                            grid.sql_snapshot = None;
                             grid.loading = false;
-                            grid.sort = this.query.sort;
+                            grid.sort = candidate.sort;
+                            grid.widths = widths;
                             table.refresh(cx);
-                            if table
-                                .delegate()
-                                .preview
-                                .as_ref()
-                                .is_some_and(|p| p.rows > 0)
-                            {
-                                table.scroll_to_row(0, cx);
-                            }
+                            table.scroll_to_row(0, cx);
                         });
+                        this.size_columns(cx);
                     }
-                    Err(error) => this.finish_query_error(error, cx),
+                    Err(error) => {
+                        this.query = this.active_tab().browse.clone();
+                        this.finish_query_error(error, cx);
+                    }
                 }
-                this.size_columns(cx);
                 cx.notify();
             });
         }));
@@ -246,7 +329,7 @@ impl Workspace {
     }
 
     /// Handle Browse failure or SQL startup failure at the GUI boundary.
-    /// The request already cleared its old result; stop loading and show the cause.
+    /// Browse retains its previous successful result; stop loading and show the cause.
     /// Cancellation is a normal terminal state and does not use the error color.
     /// Streamed SQL failures use snapshots instead so committed rows remain available.
     fn finish_query_error(&mut self, error: QueryError, cx: &mut Context<Self>) {
@@ -263,7 +346,7 @@ impl Workspace {
     /// Signal query cancellation, release the UI task handle and invalidate late results.
     ///
     /// Clears the busy/loading flags and displays cancellation status. A running query
-    /// has already cleared its old result/page metadata. This does not join DuckDB on
+    /// retains its previous Browse result/page metadata. This does not join DuckDB on
     /// the GUI thread; background cursor cleanup releases engine resources.
     pub(super) fn cancel(&mut self, cx: &mut Context<Self>) {
         self.sizing_task = None;
@@ -273,6 +356,9 @@ impl Workspace {
         self.busy = false;
         self.error = false;
         self.status = tr_string!("query.cancelled");
+        if !self.sql_open && !self.tabs.is_empty() {
+            self.query = self.active_tab().browse.clone();
+        }
         if let Some(result) = &self.table.read(cx).delegate().sql_result {
             result.cancel();
         }

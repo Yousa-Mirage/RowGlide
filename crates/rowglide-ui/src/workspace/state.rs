@@ -32,11 +32,51 @@ pub(super) struct RequestKey {
     pub(super) mode: TabMode,
 }
 
+/// One editable predicate row; incomplete literal text is retained until Apply.
+#[derive(Clone, PartialEq)]
+pub(super) struct FilterDraft {
+    /// Stable editor identity; never derived from the row's current list position.
+    pub(super) id: usize,
+    /// Index into the source schema, never into the visible SQL schema.
+    pub(super) column: usize,
+    /// Decoded source data type captured when the column is selected.
+    pub(super) data_type: arrow_schema::DataType,
+    /// A comparison, or None for an explicit null test.
+    pub(super) op: Option<rowglide_core::CompareOp>,
+    /// With no comparison, selects IS NOT NULL rather than IS NULL.
+    pub(super) negated: bool,
+    /// Editable literal; null tests ignore it and text comparison preserves whitespace.
+    pub(super) value: String,
+}
+
+impl FilterDraft {
+    /// Parse one raw row without mutating controls; backend validation checks the schema again.
+    pub(super) fn condition(
+        &self,
+    ) -> Result<rowglide_core::FilterCondition, rowglide_core::FilterError> {
+        Ok(if let Some(op) = self.op {
+            rowglide_core::FilterCondition::Compare {
+                column: self.column,
+                op,
+                value: rowglide_core::parse_filter_value(&self.data_type, &self.value)?,
+            }
+        } else {
+            rowglide_core::FilterCondition::IsNull {
+                column: self.column,
+                negated: self.negated,
+            }
+        })
+    }
+}
+
 /// Editable Browse text kept independently from the last applied query.
 ///
 /// Values may be incomplete or invalid. Parsing occurs on Apply/navigation checks;
 /// switching tabs preserves the original strings rather than silently correcting them.
+#[derive(Clone, PartialEq)]
 pub(super) struct BrowseDraft {
+    /// Raw editable conditions, independent of the last successfully applied query.
+    pub(super) filters: Vec<FilterDraft>,
     /// Unapplied filter text, preserved exactly while editing.
     pub(super) search: String,
     /// Editable page-size text, including blanks or invalid drafts.
@@ -49,6 +89,7 @@ impl Default for BrowseDraft {
     /// Initialize empty search text, the default 1,000-row page size and offset zero.
     fn default() -> Self {
         Self {
+            filters: Vec::new(),
             search: String::new(),
             limit: BrowsePage::default().limit().to_string(),
             offset: "0".into(),
@@ -83,7 +124,13 @@ impl BrowseDraft {
     /// Search text must match exactly; range text is compared by parsed numeric value.
     /// Invalid ranges or pending changes return false and disable page navigation.
     pub(super) fn matches_query(&self, query: &Query) -> bool {
-        self.search == query.search
+        self.search.trim() == query.search
+            && self
+                .filters
+                .iter()
+                .map(FilterDraft::condition)
+                .collect::<Result<Vec<_>, _>>()
+                .is_ok_and(|filters| filters == query.filters)
             && self.page().is_ok_and(|page| {
                 Some(page.limit()) == query.limit && page.offset() == query.offset
             })

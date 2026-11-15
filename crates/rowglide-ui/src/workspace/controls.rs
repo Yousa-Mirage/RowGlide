@@ -144,7 +144,7 @@ impl Workspace {
                             limit: Some(BrowsePage::default().limit()),
                             ..Default::default()
                         };
-                        this.active_tab_mut().browse = this.query.clone();
+
                         this.active_tab_mut().drafts = super::state::BrowseDraft::default();
                         this.reset_inputs(window, cx);
 

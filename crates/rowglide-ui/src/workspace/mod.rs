@@ -70,7 +70,7 @@ pub(crate) struct Workspace {
     recent_revision: u64,
     /// Index of the selected session; only accessed when tabs is nonempty.
     active_tab: usize,
-    /// Applied request for the active tab and mode; excludes pending drafts.
+    /// Current request candidate; the tab retains the last successfully applied Browse query.
     query: Query,
 
     // Persistent GPUI controls and subscriptions.
@@ -215,12 +215,9 @@ impl Workspace {
                     {
                         return;
                     }
-                    this.active_tab_mut().browse.sort = event.0;
-                    this.active_tab_mut().browse.offset = 0;
-                    this.active_tab_mut().drafts.offset = "0".into();
-                    this.offset
-                        .update(cx, |state, cx| state.set_value("0", window, cx));
-                    this.query = this.active_tab().active_query();
+                    this.query = this.active_tab().browse.clone();
+                    this.query.sort = event.0;
+                    this.query.offset = 0;
 
                     this.run(window, cx);
                 },
