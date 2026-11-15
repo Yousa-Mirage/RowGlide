@@ -1,5 +1,6 @@
 //! Workspace state, event wiring, and top-level layout.
 
+mod actions;
 mod clipboard;
 mod controls;
 mod file_info;
@@ -10,6 +11,8 @@ mod query;
 mod sizing;
 mod sql;
 mod state;
+#[cfg(test)]
+mod tests;
 
 use crate::i18n::{tr, tr_string};
 use crate::theme;
@@ -64,6 +67,8 @@ pub(crate) struct Workspace {
     // Persistent GPUI controls and subscriptions.
     /// Shared virtualized table entity holding the active result buffers.
     table: Entity<TableState<Grid>>,
+    /// Stable focus target for opening files, including the empty workspace.
+    open_focus: FocusHandle,
     /// Editable Browse text filter control.
     search: Entity<InputState>,
     /// Editable Browse page-size control.
@@ -151,6 +156,7 @@ impl Workspace {
                 cx,
             )
             .cell_selectable(true)
+            .loop_selection(false)
             .col_movable(false)
         });
 
@@ -200,18 +206,7 @@ impl Workspace {
                     });
                 }
                 if let TableEvent::DoubleClickedCell(row, col) = event {
-                    this.close_file_info(cx);
-                    this.selected = table.read(cx).delegate().row(*row).map(|(batch, r)| {
-                        (
-                            batch.schema().field(*col).name().clone(),
-                            batch.column(*col).clone(),
-                            r,
-                        )
-                    });
-                    this.pending_cell = this.selected.is_none().then_some((*row, *col));
-                    this.expanded.clear();
-                    this.expanded.insert("value".into());
-                    cx.notify();
+                    this.inspect_cell(*row, *col, cx);
                 }
             }),
         ];
@@ -231,6 +226,7 @@ impl Workspace {
             backend,
             results,
             table,
+            open_focus: cx.focus_handle().tab_stop(true),
             search,
             limit,
             offset,
@@ -261,6 +257,7 @@ impl Workspace {
             this.sync_controls_from_tab(window, cx);
             this.run(window, cx);
         }
+        this.focus_content(window, cx);
         this.open_paths(files, window, cx);
         this
     }
@@ -324,7 +321,8 @@ impl Render for Workspace {
     /// execution remains in event handlers rather than this render method.
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.tabs.is_empty() {
-            return div()
+            return self
+                .keyboard_root(cx)
                 .size_full()
                 .flex()
                 .flex_col()
@@ -385,7 +383,7 @@ impl Render for Workspace {
                 }),
             )
             .child(
-                div().flex_1().min_w_0().h_full().child(
+                self.keyboard_grid(cx).flex_1().min_w_0().h_full().child(
                     DataTable::new(&self.table)
                         // Stop at the first and last row without exposing overscroll space.
                         .scroll_bounce(false)
@@ -402,8 +400,7 @@ impl Render for Workspace {
 
         content = content.child(body).child(self.render_status(cx));
 
-        div()
-            .id("workspace")
+        self.keyboard_root(cx)
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
@@ -424,4 +421,9 @@ impl Render for Workspace {
             .child(content)
             .into_any_element()
     }
+}
+
+/// Register workspace key bindings after GPUI Kit registers its component bindings.
+pub(crate) fn init(cx: &mut App) {
+    actions::init(cx);
 }

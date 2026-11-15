@@ -20,5 +20,6 @@ sys-locale.workspace = true
 workspace = true
 
 [dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }
 serde_json.workspace = true
 futures-lite.workspace = true

@@ -69,12 +69,16 @@ impl Workspace {
             self.restore_session(window, cx);
             self.refresh_file_info(cx);
         }
+        if was_active {
+            self.focus_content(window, cx);
+        }
         cx.notify();
     }
 
     /// Build the shared Open files button and wire it to native path selection.
     pub(super) fn render_open_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
         Button::new("open-files")
+            .track_focus(&self.open_focus)
             .small()
             .label(tr!("files.open"))
             .on_click(cx.listener(|this, _, window, cx| this.open_files(window, cx)))

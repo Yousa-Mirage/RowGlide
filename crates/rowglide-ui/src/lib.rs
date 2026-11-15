@@ -33,6 +33,7 @@ pub fn run(
     i18n::initialize();
     application().with_assets(assets::Assets).run(move |cx| {
         init(cx);
+        workspace::init(cx);
 
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {

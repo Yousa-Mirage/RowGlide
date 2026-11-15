@@ -164,7 +164,11 @@ impl Workspace {
                             })),
                     ),
             )
-            .child(Editor::new(&self.sql).h(px(95.)))
+            .child(
+                div()
+                    .key_context("RowglideSql")
+                    .child(Editor::new(&self.sql).h(px(95.))),
+            )
             .child(
                 div()
                     .mt_2()

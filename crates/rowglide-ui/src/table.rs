@@ -79,6 +79,20 @@ impl Grid {
         }
     }
 
+    /// Capture a full typed value, rejecting stale coordinates after a result replacement.
+    pub(crate) fn copy_target(&self, row: usize, col: usize) -> Option<CopyTarget> {
+        if col >= self.schema()?.fields().len() {
+            return None;
+        }
+        if let Some(result) = &self.sql_result {
+            (row < self.sql_snapshot.as_ref()?.rows)
+                .then(|| CopyTarget::Sql(result.clone(), row, col))
+        } else {
+            self.row(row)
+                .map(|(batch, local)| CopyTarget::Cell(batch.column(col).clone(), local))
+        }
+    }
+
     /// Whether either mode retains a result, including empty or partially loaded SQL data.
     pub(crate) fn has_result(&self) -> bool {
         self.preview.is_some() || self.sql_result.is_some()
@@ -203,12 +217,7 @@ impl TableDelegate for Grid {
             cx.theme().foreground
         };
 
-        let target = if let Some(result) = &self.sql_result {
-            Some(CopyTarget::Sql(result.clone(), row, col))
-        } else {
-            self.row(row)
-                .map(|(batch, local)| CopyTarget::Cell(batch.column(col).clone(), local))
-        };
+        let target = self.copy_target(row, col);
         let events = self.events.clone();
 
         div()
