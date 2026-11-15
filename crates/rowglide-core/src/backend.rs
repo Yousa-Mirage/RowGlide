@@ -66,6 +66,9 @@ pub enum QueryError {
     /// The request's cancellation token was observed by background work.
     #[error("Query cancelled")]
     Cancelled,
+    /// The registered file changed or became inaccessible; explicitly reload before reading again.
+    #[error("Source file changed or is unavailable; reload the file before querying")]
+    SourceChanged,
     /// Invalid input, unsupported operation or an explicit collection-budget failure.
     #[error("{0}")]
     Invalid(String),
@@ -143,6 +146,22 @@ pub trait Backend: Send + Sync {
     /// Unknown IDs are harmless. Fixture-only backends need no registry cleanup.
     fn close(&self, _source: usize) -> Result<(), QueryError> {
         Ok(())
+    }
+
+    /// Check metadata off the GUI thread; true means changed or no longer accessible.
+    /// Once detected, a change remains latched until an explicit successful reload.
+    /// Fixture-only backends return false without accessing the filesystem.
+    fn source_changed(&self, _source: usize) -> Result<bool, QueryError> {
+        Ok(false)
+    }
+
+    /// Reinspect a registered file off the GUI thread, keeping its ID on success.
+    /// Failure leaves the old registration intact. Callers cancel old work first and
+    /// discard old result/schema state only after success. Fixtures reject reload.
+    fn reload(&self, _source: usize, _cancel: Cancellation) -> Result<Source, QueryError> {
+        Err(QueryError::Invalid(
+            "This backend cannot reload local files".into(),
+        ))
     }
 
     /// Read one page of Parquet footer details on a background worker.

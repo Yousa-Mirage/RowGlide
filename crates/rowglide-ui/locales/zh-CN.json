@@ -17,12 +17,16 @@
     "placeholder": "筛选文本列…"
   },
   "files": {
+    "changed_tab": "%{name} · 已变更",
     "empty": "打开 Parquet 或 CSV 文件",
     "open": "打开文件…",
     "prompt": "打开 CSV 或 Parquet 文件",
     "inspecting": "正在读取文件信息…",
     "close": "关闭 %{name}",
-    "drop": "松开以打开文件"
+    "drop": "松开以打开文件",
+    "changed": "文件已变更或无法访问。当前数据可能已过期，请重新加载后再查询。",
+    "reload": "重新加载文件",
+    "reloading": "正在重新加载…"
   },
   "browse": {
     "limit": "每页行数",

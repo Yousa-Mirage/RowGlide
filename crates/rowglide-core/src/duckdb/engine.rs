@@ -1,12 +1,15 @@
 //! Local-file registry and resource-limited DuckDB connections.
 
-use super::{parquet, stream};
+use super::{freshness::FileStamp, parquet, stream};
 use crate::{Backend, BatchCursor, Cancellation, Query, QueryError, Source};
 use arrow_schema::SchemaRef;
 use duckdb::{Config, Connection};
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{
+        Arc, Mutex, MutexGuard,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
 };
 
@@ -24,6 +27,29 @@ pub(super) struct FileSource {
     pub(super) path: PathBuf,
     /// Source schema captured when the file was first registered.
     pub(super) schema: SchemaRef,
+    /// Metadata baseline captured before schema inspection.
+    stamp: FileStamp,
+    /// Shared with running workers; a detected change requires explicit reload.
+    changed: Arc<AtomicBool>,
+}
+
+impl FileSource {
+    /// Compare filesystem metadata without the engine gate, latching any failure or change.
+    pub(super) fn changed(&self) -> bool {
+        if FileStamp::read(&self.path).map_or(true, |stamp| stamp != self.stamp) {
+            self.changed.store(true, Ordering::Relaxed);
+        }
+        self.changed.load(Ordering::Relaxed)
+    }
+
+    /// Reject reads of a changed source. This is a best-effort check, not a file lock.
+    pub(super) fn ensure_current(&self) -> Result<(), QueryError> {
+        if self.changed() {
+            Err(QueryError::SourceChanged)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 /// Local-file registry and serialized DuckDB query backend.
@@ -49,6 +75,108 @@ impl Default for DuckDbBackend {
 }
 
 impl DuckDbBackend {
+    /// Inspect a stable file under the engine gate and atomically register or replace it.
+    /// Reload failures preserve the prior descriptor, including its latched change flag.
+    fn inspect(
+        &self,
+        path: &Path,
+        cancel: Cancellation,
+        replacing: Option<usize>,
+    ) -> Result<Source, QueryError> {
+        cancel.check()?;
+        let path = if replacing.is_some() {
+            path.to_owned()
+        } else {
+            path.canonicalize()?
+        };
+        if !path.is_file() {
+            return Err(QueryError::Invalid(
+                "Select a regular CSV or Parquet file".into(),
+            ));
+        }
+        let format = match path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("parquet" | "pq") => "PARQUET",
+            Some("csv") => "CSV",
+            _ => {
+                return Err(QueryError::Invalid(
+                    "Supported file types: .parquet, .pq, .csv".into(),
+                ));
+            }
+        };
+        if let Some(file) = self
+            .registry()?
+            .iter()
+            .flatten()
+            .find(|file| file.path == path && replacing != Some(file.info.id))
+        {
+            return Ok(file.info.clone());
+        }
+        let _guard = lock_engine(&self.gate, &cancel)?;
+        let stamp = FileStamp::read(&path)?;
+        let temp = crate::temporary::Directory::create()?;
+        let conn = connection(temp.path())?;
+        let _interrupt = stream::Interrupt::new(&conn, cancel.clone())?;
+        register(&conn, &path, format)?;
+        let mut statement = conn.prepare("SELECT * FROM current_file LIMIT 0")?;
+        let schema = statement.stream_arrow([])?.get_schema();
+        drop(statement);
+        let (rows, parquet) = if format == "PARQUET" {
+            let (rows, summary) = parquet::summary(&conn, schema.fields().len())?;
+            (Some(rows), Some(summary))
+        } else {
+            (None, None)
+        };
+        cancel.check()?;
+        if FileStamp::read(&path)? != stamp {
+            return Err(QueryError::SourceChanged);
+        }
+        let mut files = self.registry()?;
+        if replacing.is_some_and(|id| files.get(id).is_none_or(Option::is_none)) {
+            return Err(QueryError::Invalid(
+                "File was closed while reloading".into(),
+            ));
+        }
+        if let Some(file) = files
+            .iter()
+            .flatten()
+            .find(|file| file.path == path && replacing != Some(file.info.id))
+        {
+            return Ok(file.info.clone());
+        }
+        let info = Source {
+            id: replacing.unwrap_or(files.len()),
+            name: path.file_name().map_or_else(
+                || path.display().to_string(),
+                |name| name.to_string_lossy().into_owned(),
+            ),
+            format,
+            rows,
+            parquet,
+            description: "Local file",
+        };
+        let file = Some(FileSource {
+            info: info.clone(),
+            path,
+            schema,
+            stamp,
+            changed: Arc::new(AtomicBool::new(false)),
+        });
+        if let Some(id) = replacing {
+            if let Some(old) = &files[id] {
+                old.changed.store(true, Ordering::Relaxed);
+            }
+            files[id] = file;
+        } else {
+            files.push(file);
+        }
+        Ok(info)
+    }
+
     /// Lock the file registry, reporting poison without retaining a borrowed lock guard.
     /// Typed I/O and engine errors bypass this boundary and propagate unchanged.
     fn registry(&self) -> Result<MutexGuard<'_, Vec<Option<FileSource>>>, QueryError> {
@@ -145,71 +273,23 @@ impl Backend for DuckDbBackend {
     /// Errors include unsupported formats, missing files, cancellation and DuckDB
     /// inspection failures. Parquet totals come from the footer; CSV totals remain unknown.
     fn open(&self, path: &Path, cancel: Cancellation) -> Result<Source, QueryError> {
-        cancel.check()?;
-        let path = path.canonicalize()?;
-        if !path.is_file() {
-            return Err(QueryError::Invalid(
-                "Select a regular CSV or Parquet file".into(),
-            ));
-        }
-        let format = match path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .map(str::to_ascii_lowercase)
-            .as_deref()
-        {
-            Some("parquet" | "pq") => "PARQUET",
-            Some("csv") => "CSV",
-            _ => {
-                return Err(QueryError::Invalid(
-                    "Supported file types: .parquet, .pq, .csv".into(),
-                ));
-            }
-        };
-        if let Some(file) = self
+        self.inspect(path, cancel, None)
+    }
+
+    /// Check the registered fingerprint without blocking on DuckDB execution.
+    fn source_changed(&self, source: usize) -> Result<bool, QueryError> {
+        let file = self.registry()?.get(source).and_then(Clone::clone);
+        Ok(file.is_some_and(|file| file.changed()))
+    }
+
+    /// Inspect into a fresh descriptor; commit only if the old source remains registered.
+    fn reload(&self, source: usize, cancel: Cancellation) -> Result<Source, QueryError> {
+        let file = self
             .registry()?
-            .iter()
-            .flatten()
-            .find(|file| file.path == path)
-        {
-            return Ok(file.info.clone());
-        }
-        let _guard = lock_engine(&self.gate, &cancel)?;
-        let temp = crate::temporary::Directory::create()?;
-        let conn = connection(temp.path())?;
-        let _interrupt = stream::Interrupt::new(&conn, cancel.clone())?;
-        register(&conn, &path, format)?;
-        let mut statement = conn.prepare("SELECT * FROM current_file LIMIT 0")?;
-        let schema = statement.stream_arrow([])?.get_schema();
-        drop(statement);
-        let (rows, parquet) = if format == "PARQUET" {
-            let (rows, summary) = parquet::summary(&conn, schema.fields().len())?;
-            (Some(rows), Some(summary))
-        } else {
-            (None, None)
-        };
-        cancel.check()?;
-        let mut files = self.registry()?;
-        if let Some(file) = files.iter().flatten().find(|file| file.path == path) {
-            return Ok(file.info.clone());
-        }
-        let info = Source {
-            id: files.len(),
-            name: path.file_name().map_or_else(
-                || path.display().to_string(),
-                |name| name.to_string_lossy().into_owned(),
-            ),
-            format,
-            rows,
-            parquet,
-            description: "Local file",
-        };
-        files.push(Some(FileSource {
-            info: info.clone(),
-            path,
-            schema,
-        }));
-        Ok(info)
+            .get(source)
+            .and_then(Clone::clone)
+            .ok_or_else(|| QueryError::Invalid("File is no longer available".into()))?;
+        self.inspect(&file.path, cancel, Some(source))
     }
 
     /// Remove registry metadata without taking the engine gate or touching the file.
@@ -224,7 +304,7 @@ impl Backend for DuckDbBackend {
 
     /// Inspect one bounded footer relation under the same engine gate as data queries.
     /// Uses its own cancellation token and connection, so detail failures do not replace
-    /// user data. File information reflects the file at the time of each read.
+    /// user data. Fingerprint checks reject details from an externally changed source.
     fn parquet_metadata(
         &self,
         source: usize,
@@ -243,12 +323,14 @@ impl Backend for DuckDbBackend {
             ));
         }
         let _guard = lock_engine(&self.gate, &cancel)?;
+        file.ensure_current()?;
         let temp = crate::temporary::Directory::create()?;
         let conn = connection(temp.path())?;
         let _interrupt = stream::Interrupt::new(&conn, cancel.clone())?;
         register(&conn, &file.path, file.info.format)?;
         let result = parquet::page(&conn, request, &cancel);
         cancel.check()?;
+        file.ensure_current()?;
         result
     }
 

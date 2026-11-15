@@ -5,6 +5,7 @@ mod clipboard;
 mod controls;
 mod file_info;
 mod files;
+mod freshness;
 mod inspector;
 mod memory;
 mod query;
@@ -26,6 +27,7 @@ use gpui_kit::component::{
     input::{EditorState, InputState},
     table::{DataTable, TableEvent, TableState},
 };
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use rowglide_core::{Backend, BrowsePage, Cancellation, Query};
 use std::{collections::HashSet, sync::Arc};
@@ -91,6 +93,16 @@ pub(crate) struct Workspace {
     memory_bytes: Option<u64>,
     /// Owns periodic sampling independently of queries; dropping the workspace cancels it.
     _memory_task: Task<()>,
+    /// One serial metadata poller, cancelled when the workspace is dropped.
+    _source_watch_task: Task<()>,
+    /// Explicit reload completion; old visible results survive until success.
+    reload_task: Option<Task<()>>,
+    /// Cancels pending engine admission when reloading stops or the workspace closes.
+    reload_cancel: Cancellation,
+    /// Source being reloaded; prevents duplicate reloads and handles tab closure.
+    reloading: Option<usize>,
+    /// Invalidates metadata samples started before a reload or source closure.
+    source_revision: u64,
 
     /// Copy worker and feedback, independent of query lifecycle and per-tab state.
     clipboard: clipboard::ClipboardState,
@@ -189,7 +201,10 @@ impl Workspace {
                 &events,
                 window,
                 |this, _, event: &SortRequested, window, cx| {
-                    if this.tabs.is_empty() || this.active_tab().mode == TabMode::Sql {
+                    if this.tabs.is_empty()
+                        || this.active_tab().mode == TabMode::Sql
+                        || this.active_tab().changed
+                    {
                         return;
                     }
                     this.active_tab_mut().browse.sort = event.0;
@@ -246,6 +261,11 @@ impl Workspace {
             _subscriptions: subscriptions,
             memory_bytes: None,
             _memory_task: Self::watch_memory(cx),
+            _source_watch_task: Self::watch_sources(cx),
+            reload_task: None,
+            reload_cancel: Cancellation::default(),
+            reloading: None,
+            source_revision: 0,
             clipboard: clipboard::ClipboardState::default(),
             task: None,
             sizing_task: None,
@@ -320,6 +340,7 @@ impl Drop for Workspace {
     /// This only signals their tokens; worker-owned resources perform their own cleanup
     /// as background tasks observe cancellation.
     fn drop(&mut self) {
+        self.reload_cancel.cancel();
         self.cancellation.cancel();
         self.opening_cancel.cancel();
     }
@@ -375,7 +396,10 @@ impl Render for Workspace {
             .min_h_0()
             .flex()
             .flex_col()
-            .child(self.render_toolbar(cx));
+            .child(self.render_toolbar(cx))
+            .when(self.active_tab().changed, |s| {
+                s.child(self.render_source_warning(cx))
+            });
 
         if self.sql_open {
             content = content.child(self.render_sql(cx));

@@ -225,6 +225,7 @@ fn produce(
     sender: &Sender<Message>,
 ) -> Result<(), QueryError> {
     let _guard = engine::lock_engine(&gate, &cancel)?;
+    file.ensure_current()?;
     let temp = crate::temporary::Directory::create()?;
     let conn = engine::connection(temp.path())?;
     let _interrupt = Interrupt::new(&conn, cancel.clone())?;
@@ -245,6 +246,7 @@ fn produce(
         }
         send(sender, Message::Batch(batch), &cancel)?;
     }
+    file.ensure_current()?;
     send(sender, Message::End, &cancel)
 }
 

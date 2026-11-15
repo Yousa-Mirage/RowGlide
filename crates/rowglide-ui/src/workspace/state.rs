@@ -137,6 +137,8 @@ impl PageSummary {
 pub(super) struct TabState {
     /// Registered file metadata shared by both modes.
     pub(super) source: Source,
+    /// Latched external change: retained data may be stale and new reads require reload.
+    pub(super) changed: bool,
     /// File information preferences, independent of Browse/SQL query state.
     pub(super) info: super::file_info::InfoPreferences,
     /// Last applied Browse query, independent of pending input text.
@@ -168,6 +170,7 @@ impl TabState {
                 ..Query::default()
             },
             source,
+            changed: false,
             info: super::file_info::InfoPreferences::default(),
             sql: "SELECT * FROM current_file LIMIT 100;".into(),
             mode: TabMode::Browse,
@@ -192,7 +195,11 @@ impl TabState {
     /// Next needs completed lookahead evidence; Previous only needs a positive applied
     /// offset, allowing recovery from empty or failed pages.
     pub(super) fn can_turn_page(&self, next: bool, busy: bool, draft: &BrowseDraft) -> bool {
-        if self.mode != TabMode::Browse || busy || !draft.matches_query(&self.browse) {
+        if self.changed
+            || self.mode != TabMode::Browse
+            || busy
+            || !draft.matches_query(&self.browse)
+        {
             return false;
         }
         if next {

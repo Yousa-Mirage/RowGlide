@@ -17,12 +17,16 @@
     "placeholder": "Filter text columns…"
   },
   "files": {
+    "changed_tab": "%{name} · Changed",
     "empty": "Open a Parquet or CSV file",
     "open": "Open files…",
     "prompt": "Open CSV or Parquet files",
     "inspecting": "Inspecting files…",
     "close": "Close %{name}",
-    "drop": "Drop files to open"
+    "drop": "Drop files to open",
+    "changed": "File changed or is unavailable. Displayed data may be outdated; reload before querying.",
+    "reload": "Reload file",
+    "reloading": "Reloading…"
   },
   "browse": {
     "limit": "Limit",

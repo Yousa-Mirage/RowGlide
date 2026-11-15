@@ -60,6 +60,7 @@ pub(crate) fn initialize() {
 /// verbatim rather than translated by brittle string matching.
 pub(crate) fn query_error(error: &QueryError) -> String {
     match error {
+        QueryError::SourceChanged => tr_string!("files.changed"),
         QueryError::Cancelled => tr_string!("errors.cancelled"),
         QueryError::Data(source) => tr_string!("errors.arrow", error = source),
         QueryError::Io(source) => tr_string!("errors.io", error = source),

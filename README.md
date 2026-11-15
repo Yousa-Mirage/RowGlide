@@ -2,6 +2,25 @@
 
 A native data browser built with Rust and [GPUI Kit](https://github.com/longbridge/gpui-kit).
 
+## External file changes
+
+One background task checks opened files every three seconds using file size and
+modification time (plus device/inode on Unix). No content hashing, filesystem
+watcher dependency or automatic data reload is involved.
+
+Changed or inaccessible files get a **Changed** tab label and a persistent warning.
+Retained results remain viewable, active reads are cancelled when detected, and
+new queries require **Reload file**. Reload inspects the source in the background;
+failure keeps the old data and warning. Success refreshes schema/source metadata,
+resets to the first Browse page, clears old result sessions and preserves the SQL
+draft without executing it.
+
+The backend also checks freshness after engine admission and before successful
+query completion. These are best-effort checks, not snapshot isolation: metadata
+polling can miss edits that preserve observed attributes and cannot prevent an
+external writer from changing a file during a scan. Avoid querying files while
+another program is actively writing them.
+
 ## Download builds
 
 The **Build binaries** GitHub Actions workflow builds every pushed tag. It also
@@ -215,6 +234,7 @@ budgets and environment overrides.
 - `workspace/query.rs`: query execution, cancellation, and session switching.
 - `workspace/sql.rs`: streamed SQL progress, cache notifications and terminal status.
 - `workspace/files.rs`: native file picker, startup paths and background schema inspection.
+- `workspace/freshness.rs`: lightweight source checks, persistent warnings and explicit reload.
 - `workspace/state.rs`: per-file browse/SQL state and bounded result cache.
 - `workspace/inspector.rs`: selected-cell panel and nested-value tree.
 - `workspace/file_info/`: Parquet detail panel and metadata table.

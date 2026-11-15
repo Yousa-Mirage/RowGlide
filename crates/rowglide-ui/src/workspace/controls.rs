@@ -1,6 +1,6 @@
 //! File navigation, browse controls, SQL editor, and status bar.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_string};
 
 use super::{TabMode, Workspace};
 use gpui_kit::component::{
@@ -26,7 +26,11 @@ impl Workspace {
             .children(self.tabs.iter().enumerate().map(|(index, tab)| {
                 let source = tab.source.id;
                 Tab::new()
-                    .label(tab.source.name.clone())
+                    .label(if tab.changed {
+                        tr_string!("files.changed_tab", name = tab.source.name)
+                    } else {
+                        tab.source.name.clone()
+                    })
                     .when(index == self.active_tab, |tab| {
                         tab.track_focus(&self.tabs_focus).tab_stop(true)
                     })
@@ -78,6 +82,8 @@ impl Workspace {
     pub(super) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let border = cx.theme().border;
         let sql_mode = self.active_tab().mode == TabMode::Sql;
+        let blocked =
+            self.active_tab().changed || self.reloading == Some(self.active_tab().source.id);
         div()
             .key_context("RowglideBrowse")
             .px_5()
@@ -94,7 +100,7 @@ impl Workspace {
                         .id("browse-filter")
                         .aria_label(tr!("a11y.filter"))
                         .small()
-                        .disabled(sql_mode),
+                        .disabled(sql_mode || blocked),
                 ),
             )
             .child(div().text_xs().child(tr!("browse.limit")))
@@ -104,7 +110,7 @@ impl Workspace {
                         .id("browse-limit")
                         .aria_label(tr!("browse.limit"))
                         .small()
-                        .disabled(sql_mode),
+                        .disabled(sql_mode || blocked),
                 ),
             )
             .child(div().text_xs().child(tr!("browse.offset")))
@@ -114,14 +120,14 @@ impl Workspace {
                         .id("browse-offset")
                         .aria_label(tr!("browse.offset"))
                         .small()
-                        .disabled(sql_mode),
+                        .disabled(sql_mode || blocked),
                 ),
             )
             .child(
                 Button::new("filter")
                     .small()
                     .label(tr!("common.apply"))
-                    .disabled(sql_mode)
+                    .disabled(sql_mode || blocked)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.apply_filter(window, cx);
                     })),
@@ -130,7 +136,7 @@ impl Workspace {
                 Button::new("reset")
                     .small()
                     .label(tr!("common.reset"))
-                    .disabled(sql_mode)
+                    .disabled(sql_mode || blocked)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.query = Query {
                             source: this.query.source,
@@ -148,6 +154,7 @@ impl Workspace {
             .when(self.active_tab().source.parquet.is_some(), |toolbar| {
                 toolbar.child(
                     Button::new("file-info-toggle")
+                        .disabled(blocked)
                         .small()
                         .label(if self.active_tab().info.open {
                             tr!("info.hide")
@@ -194,6 +201,7 @@ impl Workspace {
                     )
                     .child(
                         Button::new("run")
+                            .disabled(self.active_tab().changed)
                             .small()
                             .primary()
                             .label(tr!("sql.run"))
@@ -269,6 +277,7 @@ impl Workspace {
             })
             .when(
                 !self.busy
+                    && !self.active_tab().changed
                     && !self.table.read(cx).delegate().has_result()
                     && (!self.sql_open || self.active_tab().last_sql.is_some()),
                 |s| {

@@ -61,7 +61,7 @@ impl Workspace {
     /// update the error/status display; they do not replace the applied query or result.
     /// Calls made in SQL mode are ignored.
     pub(super) fn apply_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.active_tab().mode != TabMode::Browse {
+        if self.active_tab().mode != TabMode::Browse || self.active_tab().changed {
             return;
         }
         let draft = self.browse_draft(cx);
@@ -151,8 +151,13 @@ impl Workspace {
     /// metadata and enters loading state. Browse collects a complete bounded page;
     /// SQL starts a continuously generated disk-backed result. Completion updates status
     /// only if tab, mode and generation still match, resets scrolling for nonempty
-    /// results, and reports errors without publishing partial Browse pages.
+    /// results, and reports errors without publishing partial Browse pages. Changed or
+    /// reloading sources are rejected before altering the current result.
     pub(super) fn run(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.active_tab().changed || self.reloading == Some(self.active_tab().source.id) {
+            cx.notify();
+            return;
+        }
         self.cancellation.cancel();
         self.task = None;
         self.cancellation = Cancellation::default();
@@ -400,7 +405,7 @@ impl Workspace {
     /// Only operates in SQL mode. The query is rebuilt from the tab's SQL state so
     /// Browse filtering, sorting and range settings are excluded.
     pub(super) fn run_sql(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.active_tab().mode != TabMode::Sql {
+        if self.active_tab().mode != TabMode::Sql || self.active_tab().changed {
             return;
         }
         let sql = self.sql.read(cx).value().to_string();

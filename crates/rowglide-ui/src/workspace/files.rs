@@ -75,6 +75,12 @@ impl Workspace {
             return;
         }
 
+        self.source_revision += 1;
+        if self.reloading == Some(source) {
+            self.reload_cancel.cancel();
+            self.reload_task = None;
+            self.reloading = None;
+        }
         let was_active = index == self.active_tab;
         if was_active {
             self.sizing_task = None;

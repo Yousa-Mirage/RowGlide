@@ -4,6 +4,7 @@
 //! and execute operations through the shared `Backend` contract.
 
 mod engine;
+mod freshness;
 mod parquet;
 mod sql;
 mod stream;

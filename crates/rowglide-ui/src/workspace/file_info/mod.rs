@@ -145,7 +145,7 @@ impl Workspace {
     pub(super) fn refresh_file_info(&mut self, cx: &mut Context<Self>) {
         self.file_info.clear(cx);
         let tab = self.active_tab();
-        if !tab.info.open || tab.source.parquet.is_none() {
+        if !tab.info.open || tab.source.parquet.is_none() || tab.changed {
             cx.notify();
             return;
         }
