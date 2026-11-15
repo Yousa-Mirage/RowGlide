@@ -255,7 +255,7 @@ impl Workspace {
 }
 
 /// Label source-file counts explicitly, keeping them distinct from filtered/query row counts.
-pub(super) fn source_counts(source: &Source) -> Option<String> {
+pub(super) fn source_counts(source: &Source) -> Option<SharedString> {
     let summary = source.parquet.as_ref()?;
     Some(tr!(
         "info.source_counts",

@@ -1,6 +1,6 @@
 //! Per-file browse and SQL sessions with bounded result retention.
 
-use crate::i18n::tr;
+use crate::i18n::tr_string;
 
 use arrow_array::ArrayRef;
 use rowglide_core::{BrowsePage, Preview, Query, QueryError, QueryResult, Source};
@@ -69,7 +69,7 @@ impl BrowseDraft {
             } else {
                 text.trim()
                     .parse::<usize>()
-                    .map_err(|_| QueryError::Invalid(tr!("browse.invalid")))
+                    .map_err(|_| QueryError::Invalid(tr_string!("browse.invalid")))
             }
         };
         BrowsePage::new(
@@ -112,9 +112,9 @@ impl PageSummary {
     /// End of results only when lookahead found no further row.
     pub(super) fn label(self) -> String {
         if self.rows == 0 {
-            tr!("browse.empty", offset = self.range.offset())
+            tr_string!("browse.empty", offset = self.range.offset())
         } else {
-            tr!(
+            tr_string!(
                 "browse.range",
                 start = self.range.offset() + 1,
                 end = self.range.offset() + self.rows,
@@ -122,7 +122,7 @@ impl PageSummary {
                 ending = if self.has_next {
                     String::new()
                 } else {
-                    tr!("browse.end")
+                    tr_string!("browse.end")
                 }
             )
         }
@@ -254,7 +254,7 @@ impl Default for ResultState {
             preview: None,
             sql_result: None,
             page: None,
-            status: tr!("common.ready"),
+            status: tr_string!("common.ready"),
             error: false,
             selected: None,
             expanded: HashSet::new(),
@@ -315,7 +315,7 @@ pub(super) fn trim_cache(tabs: &mut [TabState]) {
         result.page = None;
         result.selected = None;
         result.expanded.clear();
-        result.status = tr!("query.released");
+        result.status = tr_string!("query.released");
         result.error = false;
     }
 }

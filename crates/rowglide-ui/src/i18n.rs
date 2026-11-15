@@ -3,13 +3,31 @@
 //! Catalogs are embedded by rust-i18n at compile time. Initialize once before GPUI
 //! constructs controls; no translation files or locale environment changes are needed.
 
+use gpui_kit::SharedString;
 use rowglide_core::QueryError;
+use std::borrow::Cow;
 
-/// Translate an embedded message and return an owned string accepted by GPUI controls.
+/// Translate an embedded message for GPUI, retaining static catalog text without copying.
 macro_rules! tr {
-    ($($args:tt)*) => { rust_i18n::t!($($args)*).to_string() };
+    ($($args:tt)*) => { $crate::i18n::shared(rust_i18n::t!($($args)*)) };
 }
 pub(crate) use tr;
+
+/// Translate directly into owned text for errors, retained state and non-GPUI helpers.
+macro_rules! tr_string {
+    ($($args:tt)*) => { rust_i18n::t!($($args)*).into_owned() };
+}
+pub(crate) use tr_string;
+
+/// Keep borrowed catalog text static and convert interpolated owned text for GPUI.
+/// `SharedString::from(Cow)` copies in this GPUI version; `new_static` explicitly
+/// preserves the borrowed pointer. Owned text uses GPUI's normal storage conversion.
+pub(crate) fn shared(text: Cow<'static, str>) -> SharedString {
+    match text {
+        Cow::Borrowed(text) => SharedString::new_static(text),
+        Cow::Owned(text) => SharedString::from(text),
+    }
+}
 
 /// Select Chinese only when the system's first preferred language is Chinese.
 /// Region/script variants and Unix encoding suffixes are accepted; missing or other
@@ -42,20 +60,22 @@ pub(crate) fn initialize() {
 /// verbatim rather than translated by brittle string matching.
 pub(crate) fn query_error(error: &QueryError) -> String {
     match error {
-        QueryError::Cancelled => tr!("errors.cancelled"),
-        QueryError::Data(source) => tr!("errors.arrow", error = source),
-        QueryError::Io(source) => tr!("errors.io", error = source),
-        QueryError::DuckDb(source) => tr!("errors.duckdb", error = source),
-        QueryError::Sql(source) => tr!("errors.sql", error = source),
-        QueryError::CacheIo(source) => tr!("errors.cache", error = source),
-        QueryError::CacheRead(source) => tr!("errors.cache_read", error = query_error(source)),
+        QueryError::Cancelled => tr_string!("errors.cancelled"),
+        QueryError::Data(source) => tr_string!("errors.arrow", error = source),
+        QueryError::Io(source) => tr_string!("errors.io", error = source),
+        QueryError::DuckDb(source) => tr_string!("errors.duckdb", error = source),
+        QueryError::Sql(source) => tr_string!("errors.sql", error = source),
+        QueryError::CacheIo(source) => tr_string!("errors.cache", error = source),
+        QueryError::CacheRead(source) => {
+            tr_string!("errors.cache_read", error = query_error(source))
+        }
         QueryError::Invalid(message) | QueryError::Backend(message) => message.clone(),
     }
 }
 
 /// Translate the fixed metadata relation headers without modifying names stored in cells.
 /// Unknown future columns retain a readable form of their original identifier.
-pub(crate) fn metadata_header(name: &str) -> String {
+pub(crate) fn metadata_header(name: &str) -> SharedString {
     match name {
         "node" => tr!("metadata.node"),
         "name" => tr!("metadata.name"),
@@ -90,7 +110,7 @@ pub(crate) fn metadata_header(name: &str) -> String {
         "entry" => tr!("metadata.entry"),
         "key" => tr!("metadata.key"),
         "value" => tr!("metadata.value"),
-        _ => name.replace('_', " "),
+        _ => name.replace('_', " ").into(),
     }
 }
 
@@ -98,7 +118,43 @@ pub(crate) fn metadata_header(name: &str) -> String {
 mod tests {
     use super::supported_locale;
     use serde_json::Value;
+    use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};
+
+    /// Borrowed messages, including long catalog entries, retain their original storage.
+    #[test]
+    fn shared_catalog_text_preserves_borrowed_storage() -> Result<(), &'static str> {
+        for locale in ["en", "zh-CN"] {
+            let text = rust_i18n::t!("info.note", locale = locale);
+            let Cow::Borrowed(original) = text else {
+                return Err("Static catalog lookup unexpectedly allocated");
+            };
+            let translated = tr!("info.note", locale = locale);
+            assert_eq!(translated.as_str(), original);
+            assert_eq!(translated.as_ptr(), original.as_ptr());
+            assert_eq!(translated.clone().as_ptr(), original.as_ptr());
+        }
+        Ok(())
+    }
+
+    /// Interpolated translations own their output after temporary inputs are released.
+    /// The owned-string boundary preserves the same translated text without GPUI conversion.
+    #[test]
+    fn interpolated_text_survives_temporary_inputs() {
+        let translated = {
+            let name = String::from("temporary-name-long-enough-to-exceed-inline-storage.parquet");
+            tr!("files.close", locale = "zh-CN", name = name)
+        };
+        assert_eq!(
+            translated.as_str(),
+            "关闭 temporary-name-long-enough-to-exceed-inline-storage.parquet"
+        );
+        assert_eq!(
+            tr_string!("files.close", locale = "zh-CN", name = "中文.parquet"),
+            "关闭 中文.parquet"
+        );
+        assert_eq!(tr!("common.ready", locale = "fr").as_str(), "Ready");
+    }
 
     /// Flatten catalog leaves so translated keys can be compared without relying on order.
     fn messages(value: &Value, prefix: &str, leaves: &mut BTreeMap<String, String>) {

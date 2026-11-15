@@ -2,7 +2,7 @@
 
 pub(crate) mod sizing;
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_string};
 
 use crate::cells;
 use crate::clipboard::{CopyTarget, copy_menu};
@@ -192,7 +192,7 @@ impl TableDelegate for Grid {
             .map(|(b, r)| cells::summary(b.column(col), r))
             .unwrap_or_else(|| {
                 if self.sql_result.is_some() {
-                    tr!("common.loading")
+                    tr_string!("common.loading")
                 } else {
                     String::new()
                 }

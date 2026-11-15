@@ -1,6 +1,6 @@
 //! Virtualized footer-detail table and lossless text/hex formatting for selected values.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_string};
 
 use arrow_array::{
     Array, ArrayRef, BinaryArray, LargeBinaryArray, LargeStringArray, StringArray, StringViewArray,
@@ -30,11 +30,12 @@ impl MetadataGrid {
             .page
             .as_ref()
             .and_then(|page| page.preview.schema.fields().get(column))
-            .map_or_else(String::new, |field| {
+            .map_or_else(SharedString::default, |field| {
                 crate::i18n::metadata_header(field.name())
             });
-        let labels = std::iter::once(header)
-            .chain((0..self.rows_count(cx)).map(|row| self.label(row, column)));
+        let labels = std::iter::once(std::borrow::Cow::Borrowed(header.as_str())).chain(
+            (0..self.rows_count(cx)).map(|row| std::borrow::Cow::Owned(self.label(row, column))),
+        );
         let text_system = WindowTextSystem::new(cx.text_system().clone());
         let mut width = px(0.);
         for label in labels {
@@ -176,7 +177,7 @@ pub(super) fn value_text(
     limit: Option<usize>,
 ) -> Result<String, QueryError> {
     if row >= array.len() {
-        return Err(QueryError::Invalid(tr!("info.cell_missing")));
+        return Err(QueryError::Invalid(tr_string!("info.cell_missing")));
     }
     if array.is_null(row) {
         return Ok("null".into());

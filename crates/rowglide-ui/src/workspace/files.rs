@@ -1,6 +1,6 @@
 //! Native file selection and background schema inspection.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_string};
 
 use super::{Workspace, state::TabState};
 use gpui_kit::component::{Sizable, button::Button};
@@ -17,7 +17,7 @@ impl Workspace {
             return;
         };
         if let Err(error) = self.backend.close(source) {
-            self.status = tr!(
+            self.status = tr_string!(
                 "errors.close_file",
                 error = crate::i18n::query_error(&error)
             );
@@ -55,7 +55,7 @@ impl Workspace {
             self.query = Default::default();
             self.sql_open = false;
             self.error = false;
-            self.status = tr!("common.ready");
+            self.status = tr_string!("common.ready");
             self.search
                 .update(cx, |state, cx| state.set_value("", window, cx));
             self.limit
@@ -93,7 +93,7 @@ impl Workspace {
             files: true,
             directories: false,
             multiple: true,
-            prompt: Some(tr!("files.prompt").into()),
+            prompt: Some(tr!("files.prompt")),
         });
         let backend = self.backend.clone();
         cx.spawn_in(window, async move |this, cx| {
@@ -102,7 +102,7 @@ impl Workspace {
                 Ok(Ok(None)) => return,
                 error => {
                     let _ = this.update(cx, |this, cx| {
-                        this.status = tr!("errors.picker", error = format!("{error:?}"));
+                        this.status = tr_string!("errors.picker", error = format!("{error:?}"));
                         this.error = true;
                         cx.notify();
                     });
@@ -111,7 +111,7 @@ impl Workspace {
             };
             let _ = this.update(cx, |this, cx| {
                 if this.tabs.is_empty() {
-                    this.status = tr!("files.inspecting");
+                    this.status = tr_string!("files.inspecting");
                 }
                 cx.notify();
             });

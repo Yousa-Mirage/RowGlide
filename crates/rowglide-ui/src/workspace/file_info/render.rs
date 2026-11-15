@@ -274,25 +274,34 @@ impl Workspace {
             .gap_4();
         if let Some(summary) = &source.parquet {
             for (label, value) in [
-                (tr!("info.format"), "Parquet".to_string()),
-                (tr!("info.size"), format_file_size(summary.file_bytes)),
+                (tr!("info.format"), SharedString::new_static("Parquet")),
+                (
+                    tr!("info.size"),
+                    format_file_size(summary.file_bytes).into(),
+                ),
                 (
                     tr!("info.rows"),
                     source
                         .rows
-                        .map_or(tr!("info.unknown"), |rows| rows.to_string()),
+                        .map_or(tr!("info.unknown"), |rows| rows.to_string().into()),
                 ),
                 (
                     tr!("info.columns"),
                     tr!("info.fields", count = summary.columns),
                 ),
-                (tr!("info.row_groups"), summary.row_groups.to_string()),
-                (tr!("info.version"), summary.format_version.to_string()),
+                (
+                    tr!("info.row_groups"),
+                    summary.row_groups.to_string().into(),
+                ),
+                (
+                    tr!("info.version"),
+                    summary.format_version.to_string().into(),
+                ),
                 (
                     tr!("info.creator"),
                     summary.created_by.as_deref().map_or_else(
                         || tr!("info.not_recorded"),
-                        |creator| limited_text(creator, Some(512)),
+                        |creator| limited_text(creator, Some(512)).into(),
                     ),
                 ),
             ] {

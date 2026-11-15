@@ -1,6 +1,7 @@
 //! Display helpers that preserve the underlying Arrow values.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_string};
+use gpui_kit::SharedString;
 
 use arrow_array::{
     Array, ArrayRef, BooleanArray, FixedSizeListArray, Float64Array, Int64Array, LargeListArray,
@@ -34,13 +35,13 @@ pub(crate) fn summary(array: &ArrayRef, row: usize) -> String {
         return a.value(row).chars().take(240).collect();
     }
     if let Some(a) = array.as_any().downcast_ref::<LargeListArray>() {
-        return tr!("cell.items", count = a.value_length(row));
+        return tr_string!("cell.items", count = a.value_length(row));
     }
     if let Some(a) = array.as_any().downcast_ref::<FixedSizeListArray>() {
-        return tr!("cell.items", count = a.value_length());
+        return tr_string!("cell.items", count = a.value_length());
     }
     if let Some(a) = array.as_any().downcast_ref::<MapArray>() {
-        return tr!("cell.entries", count = a.value_length(row));
+        return tr_string!("cell.entries", count = a.value_length(row));
     }
     if let Some(a) = array.as_any().downcast_ref::<Int64Array>() {
         return a.value(row).to_string();
@@ -55,11 +56,11 @@ pub(crate) fn summary(array: &ArrayRef, row: usize) -> String {
     }
 
     if let Some(a) = array.as_any().downcast_ref::<ListArray>() {
-        return tr!("cell.items", count = a.value_length(row));
+        return tr_string!("cell.items", count = a.value_length(row));
     }
 
     if let Some(a) = array.as_any().downcast_ref::<StructArray>() {
-        return tr!("cell.fields", count = a.num_columns());
+        return tr_string!("cell.fields", count = a.num_columns());
     }
 
     arrow_cast::display::array_value_to_string(array.as_ref(), row)
@@ -118,7 +119,7 @@ pub(crate) fn children(array: &ArrayRef, row: usize) -> Vec<(String, ArrayRef, u
 ///
 /// Related numeric and text representations share labels. Unlisted types use
 /// `Value`; the original Arrow schema still retains all type details.
-pub(crate) fn type_label(data_type: &arrow_schema::DataType) -> String {
+pub(crate) fn type_label(data_type: &arrow_schema::DataType) -> SharedString {
     use arrow_schema::DataType;
 
     match data_type {

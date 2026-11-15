@@ -11,7 +11,7 @@ mod sizing;
 mod sql;
 mod state;
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_string};
 
 use state::{TabMode, TabState};
 
@@ -238,7 +238,7 @@ impl Workspace {
             opening_cancel: Cancellation::default(),
             generation: 0,
             busy: false,
-            status: tr!("common.ready"),
+            status: tr_string!("common.ready"),
             error: false,
             sql_open: false,
             file_info: file_info::InfoView::new(window, cx),

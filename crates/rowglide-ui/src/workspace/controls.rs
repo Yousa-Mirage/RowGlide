@@ -126,7 +126,7 @@ impl Workspace {
                     .label(if self.sql_open {
                         tr!("common.browse")
                     } else {
-                        "SQL".to_string()
+                        SharedString::new_static("SQL")
                     })
                     .on_click(cx.listener(|this, _, window, cx| this.switch_mode(window, cx))),
             )
@@ -205,7 +205,7 @@ impl Workspace {
                     .child(format!(
                         "{} · {}",
                         if self.sql_open {
-                            "SQL".to_string()
+                            SharedString::new_static("SQL")
                         } else {
                             tr!("common.browse")
                         },

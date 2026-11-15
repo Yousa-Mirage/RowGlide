@@ -1,6 +1,6 @@
 //! Immutable copy targets and menus shared by data cells and detail panels.
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_string};
 
 use crate::table::GridEvents;
 use arrow_array::ArrayRef;
@@ -33,7 +33,7 @@ impl CopyTarget {
                 let array = batch
                     .columns()
                     .get(*col)
-                    .ok_or_else(|| CopyError::Invalid(tr!("copy.unavailable")))?;
+                    .ok_or_else(|| CopyError::Invalid(tr_string!("copy.unavailable")))?;
                 Ok((array.clone(), local))
             }
         }

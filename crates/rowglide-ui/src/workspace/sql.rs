@@ -1,6 +1,6 @@
 //! SQL result lifecycle and coalesced GUI updates; all disk work remains in core.
 
-use crate::i18n::tr;
+use crate::i18n::tr_string;
 
 use super::{Workspace, state::TabMode};
 use gpui_kit::*;
@@ -99,14 +99,14 @@ impl Workspace {
 /// Describe generated rows without implying completeness before a successful terminal event.
 fn status(snapshot: &ResultSnapshot) -> String {
     match &snapshot.phase {
-        ResultPhase::Running if snapshot.schema.is_none() => tr!("sql.executing"),
-        ResultPhase::Running => tr!("sql.loading", rows = snapshot.rows),
-        ResultPhase::Complete => tr!("sql.complete", rows = snapshot.rows),
+        ResultPhase::Running if snapshot.schema.is_none() => tr_string!("sql.executing"),
+        ResultPhase::Running => tr_string!("sql.loading", rows = snapshot.rows),
+        ResultPhase::Complete => tr_string!("sql.complete", rows = snapshot.rows),
         ResultPhase::Cancelled => {
-            tr!("sql.cancelled", rows = snapshot.rows)
+            tr_string!("sql.cancelled", rows = snapshot.rows)
         }
         ResultPhase::Failed(error) => {
-            tr!("sql.failed", rows = snapshot.rows, error = error)
+            tr_string!("sql.failed", rows = snapshot.rows, error = error)
         }
     }
 }

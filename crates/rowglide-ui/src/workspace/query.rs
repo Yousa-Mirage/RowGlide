@@ -1,6 +1,6 @@
 //! Browse input validation and background query lifecycle.
 
-use crate::i18n::tr;
+use crate::i18n::tr_string;
 
 use super::state::{BrowseDraft, PageSummary, RequestKey};
 use super::{TabMode, Workspace};
@@ -168,7 +168,7 @@ impl Workspace {
         self.active_tab_mut().result_mut().page = None;
         self.busy = true;
         self.error = false;
-        self.status = tr!("query.loading");
+        self.status = tr_string!("query.loading");
         self.selected = None;
         self.pending_cell = None;
         self.expanded.clear();
@@ -267,7 +267,7 @@ impl Workspace {
         self.generation += 1;
         self.busy = false;
         self.error = false;
-        self.status = tr!("query.cancelled");
+        self.status = tr_string!("query.cancelled");
         if let Some(result) = &self.table.read(cx).delegate().sql_result {
             result.cancel();
         }
