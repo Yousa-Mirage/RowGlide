@@ -9,21 +9,22 @@ mod cells;
 mod clipboard;
 mod i18n;
 mod table;
+mod theme;
 mod workspace;
 
-use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 use std::{path::PathBuf, sync::Arc};
 
 /// Initialize GPUI Kit with the supplied backend and application-wide SQL result store.
 ///
 /// Selects Chinese or English from the system language, synchronizes GPUI Kit,
-/// installs assets and the light theme, creates the workspace and quits when the
-/// last window closes. The caller selects and constructs the backend; this layer
-/// depends only on its shared interface. Invoke from the application's main
-/// thread. Window creation failures are printed to stderr before quitting.
-/// Startup files are inspected after controls are created using the same background
-/// path as the file picker; an empty list leaves the normal initial view unchanged.
+/// follows the window's system light/dark appearance, creates the workspace and
+/// quits when the last window closes. The caller selects and constructs the
+/// backend; this layer depends only on its shared interface. Invoke from the
+/// application's main thread. Window creation failures are printed to stderr
+/// before quitting. Startup files are inspected after controls are created using
+/// the same background path as the file picker; an empty list leaves the normal
+/// initial view unchanged.
 pub fn run(
     backend: Arc<dyn rowglide_core::Backend>,
     results: Arc<rowglide_core::ResultStore>,
@@ -32,7 +33,6 @@ pub fn run(
     i18n::initialize();
     application().with_assets(assets::Assets).run(move |cx| {
         init(cx);
-        Theme::change(ThemeMode::Light, None, cx);
 
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
@@ -56,6 +56,9 @@ pub fn run(
         };
 
         if let Err(error) = open_window(options, cx, move |window, cx| {
+            // Apply the OS appearance before constructing the view so the first
+            // frame already uses the correct light or dark palette.
+            theme::sync_system_theme(window, cx);
             cx.new(|cx| workspace::Workspace::new(backend, results, files, window, cx))
         }) {
             eprintln!("{}", i18n::tr!("errors.open_window", error = error));

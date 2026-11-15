@@ -28,7 +28,7 @@ impl Workspace {
         row: usize,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let border = rgb(0xe4e8e7);
+        let border = cx.theme().border;
         div()
             .relative()
             .w(self.inspector_width)
@@ -111,6 +111,7 @@ impl Workspace {
         let children = cells::children(&array, row);
         let open = self.expanded.contains(&path);
         let has_children = !children.is_empty() && depth < 12;
+        let hover_background = cx.theme().accent;
         let click_path = path.clone();
         let target = CopyTarget::Cell(array.clone(), row);
         let events = self.table.read(cx).delegate().events.clone();
@@ -121,7 +122,7 @@ impl Workspace {
                 .py_2()
                 .ml(px(depth as f32 * 12.))
                 .rounded_md()
-                .hover(|s| s.bg(rgb(0xf0f3f2)))
+                .hover(|s| s.bg(hover_background))
                 .when(has_children, |node| node.cursor_pointer())
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if !has_children {

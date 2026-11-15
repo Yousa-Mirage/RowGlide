@@ -47,7 +47,7 @@ impl Workspace {
     /// querying; Reset restores the default first page. Toggling modes restores the
     /// other mode's independent state without automatically executing SQL.
     pub(super) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let border = rgb(0xe4e8e7);
+        let border = cx.theme().border;
         let sql_mode = self.active_tab().mode == TabMode::Sql;
         div()
             .px_5()
@@ -140,8 +140,8 @@ impl Workspace {
         div()
             .p_4()
             .border_b_1()
-            .border_color(rgb(0xe4e8e7))
-            .bg(rgb(0xf9faf9))
+            .border_color(cx.theme().border)
+            .bg(cx.theme().muted)
             .child(
                 div()
                     .flex()
@@ -180,13 +180,14 @@ impl Workspace {
     /// or busy queries. Missing cached results can be reloaded explicitly. Status text
     /// reports actual retained ranges rather than an uncomputed source total.
     pub(super) fn render_status(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let border = rgb(0xe4e8e7);
+        let border = cx.theme().status_bar_border;
         div()
             .min_h(px(28.))
             .px_5()
             .py(px(2.))
             .border_t_1()
             .border_color(border)
+            .bg(cx.theme().status_bar)
             .flex()
             .items_center()
             .gap_3()
@@ -198,9 +199,9 @@ impl Workspace {
                     .text_ellipsis()
                     .text_xs()
                     .text_color(if self.error {
-                        rgb(0xb34c46)
+                        cx.theme().red
                     } else {
-                        rgb(0x6c7b73)
+                        cx.theme().muted_foreground
                     })
                     .child(format!(
                         "{} · {}",
@@ -278,11 +279,11 @@ impl Workspace {
                         div()
                             .flex_shrink_0()
                             .text_xs()
-                            .text_color(rgb(0x6c7b73))
+                            .text_color(cx.theme().muted_foreground)
                             .child(label),
                     )
                 },
             )
-            .child(self.render_memory())
+            .child(self.render_memory(cx))
     }
 }

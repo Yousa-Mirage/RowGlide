@@ -34,6 +34,7 @@ rowglide-app ----------------> rowglide-core
 - 保留类型信息，优先以 Arrow schema / RecordBatch 表达表格结果；不要将整个数据集转换为字符串矩阵。
 - 区分源文件信息、查询结果和当前视图状态。CSV 的 JSON 字符串不是原生嵌套类型，JSON 查看须保留原文。
 - 嵌套查看支持列表、结构体和键值映射；Arrow dictionary encoding 不等同于键值映射。
+- UI 颜色通过 `ActiveTheme` / `cx.theme()` 读取 gpui-kit 语义 token；不要在 `rowglide-ui` 中硬编码颜色。主题跟随窗口系统外观，通过 `Window::observe_window_appearance` 更新，不维护独立 dark 状态或轮询系统主题。
 - 表格和长列表使用虚拟化；数据加载与缓存也必须有界，不能只优化绘制。
 - 文件读取、扫描、SQL、排序和筛选离开 GUI 线程。查询接口支持分批交付、背压或按需拉取、取消和明确结束状态。
 - 使用请求标识阻止旧查询覆盖新结果。取消与错误路径均须释放后台资源。

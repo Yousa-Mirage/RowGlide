@@ -40,8 +40,8 @@ impl Workspace {
             .h_full()
             .min_h_0()
             .border_l_1()
-            .border_color(rgb(0xe4e8e7))
-            .bg(rgb(0xfafbfa))
+            .border_color(cx.theme().border)
+            .bg(cx.theme().muted)
             .flex()
             .flex_col()
             .child(
@@ -96,7 +96,7 @@ impl Workspace {
             );
         if section.is_none() {
             return panel
-                .child(self.render_file_overview())
+                .child(self.render_file_overview(cx))
                 .child(handle)
                 .into_any_element();
         }
@@ -132,7 +132,7 @@ impl Workspace {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(rgb(0xb34c46))
+                            .text_color(cx.theme().red)
                             .child(error.clone()),
                     )
                     .child(
@@ -185,7 +185,7 @@ impl Workspace {
             panel = panel.child(
                 div()
                     .border_t_1()
-                    .border_color(rgb(0xe4e8e7))
+                    .border_color(cx.theme().border)
                     .px_4()
                     .py_2()
                     .child(
@@ -231,7 +231,7 @@ impl Workspace {
                     .px_3()
                     .py_1()
                     .border_t_1()
-                    .border_color(rgb(0xe4e8e7))
+                    .border_color(cx.theme().border)
                     .flex()
                     .items_center()
                     .gap_2()
@@ -261,7 +261,8 @@ impl Workspace {
     }
 
     /// Present opening-time source facts without changing query results or inspecting disk.
-    fn render_file_overview(&self) -> impl IntoElement {
+    /// `cx` supplies the active theme's muted label colors.
+    fn render_file_overview(&self, cx: &App) -> impl IntoElement {
         let source = &self.active_tab().source;
         let mut content = div()
             .id("file-overview-scroll")
@@ -314,7 +315,7 @@ impl Workspace {
                             div()
                                 .w(px(110.))
                                 .flex_shrink_0()
-                                .text_color(rgb(0x6c7b73))
+                                .text_color(cx.theme().muted_foreground)
                                 .child(label),
                         )
                         .child(div().flex_1().min_w_0().child(value)),
@@ -325,7 +326,7 @@ impl Workspace {
             div()
                 .mt_2()
                 .text_xs()
-                .text_color(rgb(0x6c7b73))
+                .text_color(cx.theme().muted_foreground)
                 .child(tr!("info.note")),
         )
     }

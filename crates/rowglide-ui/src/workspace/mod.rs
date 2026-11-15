@@ -12,13 +12,14 @@ mod sql;
 mod state;
 
 use crate::i18n::{tr, tr_string};
+use crate::theme;
 
 use state::{TabMode, TabState};
 
 use crate::table::{Grid, GridEvents, SortRequested};
 use arrow_array::ArrayRef;
 use gpui_kit::component::{
-    Sizable,
+    ActiveTheme, Sizable,
     input::{EditorState, InputState},
     table::{DataTable, TableEvent, TableState},
 };
@@ -124,6 +125,8 @@ impl Workspace {
     /// retains the Arrow array needed by the inspector. Empty registries start in the
     /// file-opening view. File inspection and query execution use background work.
     /// Nonempty startup paths enter the shared file-opening flow after controls exist.
+    /// Registers a window appearance subscription so later OS light/dark changes refresh
+    /// the active theme without rebuilding the workspace.
     pub(crate) fn new(
         backend: Arc<dyn Backend>,
         results: Arc<rowglide_core::ResultStore>,
@@ -218,6 +221,8 @@ impl Workspace {
             cx.observe(&limit, |_, _, cx| cx.notify()),
             cx.observe(&offset, |_, _, cx| cx.notify()),
         ]);
+        // Follow OS light/dark changes for the full lifetime of this workspace.
+        subscriptions.push(theme::observe_system_theme(window));
 
         let mut this = Self {
             tabs: backend.sources().into_iter().map(TabState::new).collect(),
@@ -341,11 +346,12 @@ impl Render for Workspace {
                         .px_5()
                         .py(px(2.))
                         .border_t_1()
-                        .border_color(rgb(0xe4e8e7))
+                        .border_color(cx.theme().status_bar_border)
+                        .bg(cx.theme().status_bar)
                         .flex()
                         .items_center()
                         .justify_end()
-                        .child(self.render_memory()),
+                        .child(self.render_memory(cx)),
                 )
                 .into_any_element();
         }
@@ -399,15 +405,15 @@ impl Render for Workspace {
         div()
             .id("workspace")
             .size_full()
-            .bg(rgb(0xffffff))
-            .text_color(rgb(0x263b32))
+            .bg(cx.theme().background)
+            .text_color(cx.theme().foreground)
             .font_family(".SystemUIFont")
             .flex()
             .flex_col()
             .child(
                 div()
                     .flex_shrink_0()
-                    .bg(rgb(0xf5f7f6))
+                    .bg(cx.theme().tab_bar)
                     .px_3()
                     .flex()
                     .items_center()

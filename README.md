@@ -65,6 +65,14 @@ single SELECT/WITH query against `current_file`, including aggregates and joins.
 The status bar shows whole-process resident memory (RSS), sampled in the background
 once per second and displayed in MiB/GiB. An unavailable reading appears as `—`.
 
+## Theme
+
+Rowglide follows the operating system's light or dark appearance. The matching
+GPUI Kit theme is applied before the workspace is created, and changing the
+system appearance updates the open window immediately. There is no separate
+in-app theme selector or persisted override; app-owned surfaces and GPUI Kit
+controls use the same active semantic theme.
+
 ## Copying cells
 
 Right-click a table cell or an inspector node and choose **Copy value** or
@@ -201,6 +209,7 @@ budgets and environment overrides.
 `rowglide-ui/src` encapsulates the native presentation:
 
 - `lib.rs`: public `run` entry, GPUI initialization, theme and window creation.
+- `theme.rs`: system light/dark synchronization and window appearance observer.
 - `workspace/mod.rs`: shared view state, event wiring, and main layout.
 - `workspace/controls.rs`: file tabs, browse toolbar, SQL editor, and status bar.
 - `workspace/query.rs`: query execution, cancellation, and session switching.

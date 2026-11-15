@@ -3,6 +3,7 @@
 use crate::i18n::tr;
 
 use super::Workspace;
+use gpui_kit::component::ActiveTheme;
 use gpui_kit::*;
 use std::time::Duration;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
@@ -53,7 +54,8 @@ impl Workspace {
 
     /// Render the last sampled RSS in binary units without performing OS work during drawing.
     /// This is whole-process memory, including all tabs, the engine and the UI.
-    pub(super) fn render_memory(&self) -> impl IntoElement {
+    /// `cx` supplies the active theme's muted text color.
+    pub(super) fn render_memory(&self, cx: &App) -> impl IntoElement {
         let label = match self.memory_bytes {
             Some(bytes) if bytes >= 1024 * 1024 * 1024 => {
                 tr!(
@@ -70,7 +72,7 @@ impl Workspace {
         div()
             .flex_shrink_0()
             .text_xs()
-            .text_color(rgb(0x6c7b73))
+            .text_color(cx.theme().muted_foreground)
             .child(label)
     }
 }
