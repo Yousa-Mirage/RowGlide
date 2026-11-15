@@ -21,7 +21,8 @@ fn fixture(
         super::init(cx);
         gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
             cx.new(|cx| {
-                let mut view = Workspace::new(Arc::new(MockBackend), store, Vec::new(), window, cx);
+                let mut view =
+                    Workspace::new(Arc::new(MockBackend), store, Vec::new(), None, window, cx);
                 view.cancellation.cancel();
                 view.task = None;
                 view.busy = false;

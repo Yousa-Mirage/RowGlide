@@ -141,7 +141,7 @@ impl Workspace {
     /// Choose local files and pass accepted paths to the shared background opener.
     /// Opening a picker cancels earlier inspection; cancelled or superseded pickers
     /// do not change tabs. Picker failures are displayed only for the current request.
-    fn open_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.opening_cancel.cancel();
         self.opening_cancel = Cancellation::default();
         let cancel = self.opening_cancel.clone();
@@ -196,28 +196,48 @@ impl Workspace {
         self.opening_cancel = Cancellation::default();
         let cancel = self.opening_cancel.clone();
         let backend = self.backend.clone();
+        let recent = self.recent_store.clone();
         if self.tabs.is_empty() {
             self.status = tr_string!("files.inspecting");
         }
         cx.notify();
         cx.spawn_in(window, async move |this, cx| {
             let worker_cancel = cancel.clone();
-            let results = cx
+            let (results, recent_files) = cx
                 .background_executor()
                 .spawn(async move {
-                    paths
+                    let results = paths
                         .into_iter()
                         .map(|path| {
                             let result = backend.open(&path, worker_cancel.clone());
+                            if result.is_ok()
+                                && worker_cancel.check().is_ok()
+                                && let Some(recent) = &recent
+                                && let Err(error) = recent.record(&path)
+                            {
+                                eprintln!("{error}");
+                            }
                             (path, result)
                         })
-                        .collect::<Vec<_>>()
+                        .collect::<Vec<_>>();
+                    let entries = recent.and_then(|recent| match recent.entries() {
+                        Ok(entries) => Some(entries),
+                        Err(error) => {
+                            eprintln!("{error}");
+                            None
+                        }
+                    });
+                    (results, entries)
                 })
                 .await;
             if cancel.check().is_err() {
                 return;
             }
             let _ = this.update_in(cx, |this, window, cx| {
+                this.recent_revision += 1;
+                if let Some(entries) = recent_files {
+                    this.recent_files = entries;
+                }
                 let had_tabs = !this.tabs.is_empty();
                 let mut opened = None;
                 let mut errors = Vec::new();

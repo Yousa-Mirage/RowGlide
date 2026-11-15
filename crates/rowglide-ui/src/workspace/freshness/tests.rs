@@ -78,7 +78,7 @@ fn fixture(cx: &mut TestAppContext) -> Result<Fixture, Box<dyn std::error::Error
         gpui_kit::init(cx);
         super::super::init(cx);
         gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
-            cx.new(|cx| Workspace::new(backend.clone(), results, Vec::new(), window, cx))
+            cx.new(|cx| Workspace::new(backend.clone(), results, Vec::new(), None, window, cx))
         })
     })?;
     Ok(Fixture {

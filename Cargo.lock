@@ -6457,6 +6457,7 @@ dependencies = [
  "serde_json",
  "sys-locale",
  "sysinfo 0.40.3",
+ "tempfile",
  "tokio",
 ]
 

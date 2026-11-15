@@ -31,6 +31,13 @@ pub fn run(
     files: Vec<PathBuf>,
 ) {
     i18n::initialize();
+    let recent = match rowglide_core::RecentFiles::for_user() {
+        Ok(store) => Some(Arc::new(store)),
+        Err(error) => {
+            eprintln!("{error}");
+            None
+        }
+    };
     application().with_assets(assets::Assets).run(move |cx| {
         init(cx);
         workspace::init(cx);
@@ -60,7 +67,7 @@ pub fn run(
             // Apply the OS appearance before constructing the view so the first
             // frame already uses the correct light or dark palette.
             theme::sync_system_theme(window, cx);
-            cx.new(|cx| workspace::Workspace::new(backend, results, files, window, cx))
+            cx.new(|cx| workspace::Workspace::new(backend, results, files, recent, window, cx))
         }) {
             eprintln!("{}", i18n::tr!("errors.open_window", error = error));
             cx.quit();

@@ -1,5 +1,13 @@
 {
   "_version": 1,
+  "welcome": {
+    "subtitle": "Explore your data, one file at a time.",
+    "start": "GET STARTED",
+    "recent": "RECENT FILES",
+    "drop": "Or drop Parquet or CSV files anywhere in this window.",
+    "no_recent": "Files you open will appear here.",
+    "open_recent": "Open %{path}"
+  },
   "common": {
     "ready": "Ready",
     "loading": "Loading…",

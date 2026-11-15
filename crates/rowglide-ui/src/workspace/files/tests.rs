@@ -89,13 +89,21 @@ struct Fixture {
 
 /// Create an empty production workspace with no startup files or pre-registered sources.
 fn fixture(cx: &mut TestAppContext) -> Result<Fixture, Box<dyn std::error::Error>> {
+    fixture_with_history(None, cx)
+}
+
+/// Build an empty workspace with optional isolated recent-file preferences.
+fn fixture_with_history(
+    history: Option<Arc<rowglide_core::RecentFiles>>,
+    cx: &mut TestAppContext,
+) -> Result<Fixture, Box<dyn std::error::Error>> {
     let results = ResultStore::new(CacheLimits::default())?;
     let backend = Arc::new(OpeningBackend::default());
     let (window, view) = cx.update(|cx| {
         gpui_kit::init(cx);
         super::super::init(cx);
         gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
-            cx.new(|cx| Workspace::new(backend.clone(), results, Vec::new(), window, cx))
+            cx.new(|cx| Workspace::new(backend.clone(), results, Vec::new(), history, window, cx))
         })
     })?;
     Ok(Fixture {
@@ -274,6 +282,76 @@ async fn mixed_drop_keeps_failure_notification(cx: &mut TestAppContext) {
                     .is_focused(window)
             );
         })?;
+        Ok::<(), Box<dyn std::error::Error>>(())
+    }
+    .await;
+    assert!(outcome.is_ok(), "{outcome:?}");
+}
+
+/// Startup history renders five entries; clicking one reuses opening, and closing returns home.
+#[gpui_kit::test]
+async fn welcome_recent_files_reopen_and_return_home(cx: &mut TestAppContext) {
+    let outcome = async {
+        let directory = tempfile::tempdir()?;
+        let destination = directory.path().join("history.json");
+        let history = Arc::new(rowglide_core::RecentFiles::at(destination.clone()));
+        for index in 0..7 {
+            let path = directory.path().join(format!("{index}.parquet"));
+            std::fs::write(&path, "fixture")?;
+            history.record(&path)?;
+        }
+        // Use another store to exercise a real persisted-history load on startup.
+        let fixture = fixture_with_history(
+            Some(Arc::new(rowglide_core::RecentFiles::at(
+                destination.clone(),
+            ))),
+            cx,
+        )?;
+        cx.wait_for(fixture.window, Duration::from_secs(1), |_, cx| {
+            fixture.view.read(cx).recent_files.len() == 5
+        })
+        .await;
+        cx.update_window(fixture.window, |_, window, cx| {
+            window.render_frame(cx);
+            window.click(("recent-file", 2usize), cx);
+        })?;
+        cx.wait_for(fixture.window, Duration::from_secs(1), |_, cx| {
+            let view = fixture.view.read(cx);
+            view.tabs.len() == 1 && !view.busy
+        })
+        .await;
+        cx.update_window(fixture.window, |_, window, cx| {
+            fixture.view.update(cx, |view, cx| {
+                assert_eq!(
+                    view.recent_files[0]
+                        .file_name()
+                        .and_then(|name| name.to_str()),
+                    Some("4.parquet")
+                );
+                assert_eq!(view.recent_files.len(), 5);
+                view.close_tab(view.tabs[0].source.id, window, cx);
+                assert!(view.tabs.is_empty());
+                assert_eq!(view.recent_files.len(), 5);
+            });
+            window.render_frame(cx);
+            assert!(window.find("open-files").visible());
+            assert!(window.find(("recent-file", 4usize)).visible());
+        })?;
+        let invalid = directory.path().join("bad.parquet");
+        std::fs::write(&invalid, "invalid fixture")?;
+        let invalid_text = invalid.to_str().ok_or("Non-UTF-8 fixture")?;
+        drop_paths(&fixture, &[invalid_text], cx)?;
+        cx.wait_for(fixture.window, Duration::from_secs(1), |_, cx| {
+            fixture.view.read(cx).error
+        })
+        .await;
+        let saved = rowglide_core::RecentFiles::at(destination).entries()?;
+        assert_eq!(saved.len(), 5);
+        assert!(!saved.contains(&invalid.canonicalize()?));
+        assert_eq!(
+            saved[0].file_name().and_then(|name| name.to_str()),
+            Some("4.parquet")
+        );
         Ok::<(), Box<dyn std::error::Error>>(())
     }
     .await;

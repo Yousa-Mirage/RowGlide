@@ -32,3 +32,6 @@ pub use result::{
 
 mod clipboard;
 pub use clipboard::{CopyError, CopyFormat, CopyLimits, serialize_cell};
+
+mod recent;
+pub use recent::{RecentError, RecentFiles};

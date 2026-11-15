@@ -2,6 +2,19 @@
 
 A native data browser built with Rust and [GPUI Kit](https://github.com/longbridge/gpui-kit).
 
+## Welcome and recent files
+
+The empty workspace shows a welcome page with **Open files** and up to five
+recent files. Each row shows the file name and parent directory; click it to reopen
+through the normal background file-opening workflow. Closing the last tab returns
+to this page, and file drops work here too.
+
+Successful opens move canonical paths to the front, removing duplicates. History
+persists in `rowglide/recent-files.json` under the platform's local user data
+directory. Only file paths are stored. Missing files remain listed and report the
+normal opening error when selected; failed opens do not enter the history.
+History I/O runs in the background and does not prevent opening files if it fails.
+
 ## External file changes
 
 One background task checks opened files every three seconds using file size and
@@ -216,6 +229,7 @@ budgets and environment overrides.
 - `lib.rs`: public exports for consumers.
 - `model.rs`: source metadata, query descriptions and retained Arrow results.
 - `backend.rs`: backend/cursor interfaces, cancellation and shared errors.
+- `recent.rs`: bounded recent-file history and atomic preference persistence.
 - `pagination.rs`: validated Browse ranges and bounded page collection.
 - `parquet.rs`: Parquet summary/detail contracts.
 - `session.rs`: cancellable, capacity-one query events and background cursor cleanup.
@@ -234,6 +248,7 @@ budgets and environment overrides.
 - `workspace/query.rs`: query execution, cancellation, and session switching.
 - `workspace/sql.rs`: streamed SQL progress, cache notifications and terminal status.
 - `workspace/files.rs`: native file picker, startup paths and background schema inspection.
+- `workspace/welcome.rs`: welcome layout and asynchronous recent-file loading.
 - `workspace/freshness.rs`: lightweight source checks, persistent warnings and explicit reload.
 - `workspace/state.rs`: per-file browse/SQL state and bounded result cache.
 - `workspace/inspector.rs`: selected-cell panel and nested-value tree.

@@ -14,6 +14,7 @@ mod sql;
 mod state;
 #[cfg(test)]
 mod tests;
+mod welcome;
 
 use crate::i18n::{tr, tr_string};
 use crate::theme;
@@ -61,6 +62,12 @@ pub(crate) struct Workspace {
     results: Arc<rowglide_core::ResultStore>,
     /// Open file sessions in Folder Tabs order.
     tabs: Vec<TabState>,
+    /// Newest successful file paths, capped at five and displayed only on the welcome page.
+    recent_files: Vec<std::path::PathBuf>,
+    /// Optional persistent preferences; tests can omit disk-backed history.
+    recent_store: Option<Arc<rowglide_core::RecentFiles>>,
+    /// Rejects a startup history snapshot after newer opening results have been applied.
+    recent_revision: u64,
     /// Index of the selected session; only accessed when tabs is nonempty.
     active_tab: usize,
     /// Applied request for the active tab and mode; excludes pending drafts.
@@ -156,6 +163,7 @@ impl Workspace {
         backend: Arc<dyn Backend>,
         results: Arc<rowglide_core::ResultStore>,
         files: Vec<std::path::PathBuf>,
+        recent_store: Option<Arc<rowglide_core::RecentFiles>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -244,6 +252,9 @@ impl Workspace {
 
         let mut this = Self {
             tabs: backend.sources().into_iter().map(TabState::new).collect(),
+            recent_files: Vec::new(),
+            recent_store,
+            recent_revision: 0,
             active_tab: 0,
             query: Query::default(),
             backend,
@@ -290,6 +301,7 @@ impl Workspace {
             this.run(window, cx);
         }
         this.focus_content(window, cx);
+        this.load_recent(cx);
         this.open_paths(files, window, cx);
         this
     }
@@ -359,21 +371,12 @@ impl Render for Workspace {
             .on_drop(cx.listener(Self::drop_files));
         if self.tabs.is_empty() {
             return root
+                .bg(cx.theme().background)
+                .text_color(cx.theme().foreground)
                 .size_full()
                 .flex()
                 .flex_col()
-                .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .justify_center()
-                        .gap_3()
-                        .child(tr!("files.empty"))
-                        .child(self.render_open_button(cx))
-                        .child(div().text_sm().child(self.status.clone())),
-                )
+                .child(self.render_welcome(cx))
                 .child(
                     div()
                         .min_h(px(28.))

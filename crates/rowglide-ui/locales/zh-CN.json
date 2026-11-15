@@ -1,5 +1,13 @@
 {
   "_version": 1,
+  "welcome": {
+    "subtitle": "打开文件，轻松探索数据。",
+    "start": "开始使用",
+    "recent": "最近文件",
+    "drop": "也可以将 Parquet 或 CSV 文件拖入此窗口。",
+    "no_recent": "打开过的文件会显示在这里。",
+    "open_recent": "打开 %{path}"
+  },
   "common": {
     "ready": "就绪",
     "loading": "加载中…",
