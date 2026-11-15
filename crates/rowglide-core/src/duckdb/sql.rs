@@ -1,7 +1,7 @@
 //! SQL validation and parameterized browse queries.
 
 use crate::{Query, QueryError};
-use arrow_schema::{DataType, Schema};
+use arrow_schema::Schema;
 use duckdb::types::Value;
 use sqlparser::{ast::Statement, dialect::DuckDbDialect, parser::Parser};
 
@@ -34,26 +34,10 @@ pub(super) fn build(query: &Query, schema: &Schema) -> Result<(String, Vec<Value
     }
 
     let mut sql = "SELECT * FROM current_file".to_string();
-    let mut params = Vec::new();
-    if !query.search.is_empty() {
-        let columns = schema
-            .fields()
-            .iter()
-            .filter(|field| {
-                matches!(
-                    field.data_type(),
-                    DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
-                )
-            })
-            .map(|field| format!("contains(lower({}), lower(?))", identifier(field.name())))
-            .collect::<Vec<_>>();
-        if columns.is_empty() {
-            sql.push_str(" WHERE false");
-        } else {
-            sql.push_str(" WHERE ");
-            sql.push_str(&columns.join(" OR "));
-            params.extend(columns.iter().map(|_| Value::Text(query.search.clone())));
-        }
+    let (conditions, mut params) = super::filter::predicates(query, schema)?;
+    if !conditions.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&conditions.join(" AND "));
     }
     if let Some(sort) = query.sort {
         let field = schema
