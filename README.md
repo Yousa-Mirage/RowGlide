@@ -364,3 +364,32 @@ Result budgets, file leases and successful-delete accounting remain unchanged.
 Ordinary short metadata locks stay synchronous and are never held across `await`.
 If a future feature needs Tokio runtime services, app should own and inject that
 runtime; no runtime-dependent timeout or spawn API is used on GPUI tasks here.
+
+
+## Keyboard controls
+
+Use **Cmd** on macOS and **Ctrl** on Windows/Linux:
+
+| Shortcut | Action |
+| --- | --- |
+| Cmd/Ctrl+C | Copy the focused data grid's selected cell in full |
+| Cmd/Ctrl+Shift+C | Copy the selected cell as JSON |
+| Cmd/Ctrl+F | Focus the Browse filter without applying it; does not switch modes |
+| Cmd/Ctrl+Enter | Run the current SQL draft in SQL mode |
+| Cmd/Ctrl+W | Close the active file; the last tab leaves the empty window |
+| Arrow keys | Move the main grid's cell selection without wrapping at edges |
+| Enter / Space | Open the selected grid cell in the inspector |
+| Escape | Dismiss a menu first, then one detail panel, then the grid selection |
+| Tab / Shift+Tab | Move between visible, enabled controls, including leaving the SQL editor |
+
+Input/editor text copying and arrow navigation remain native. The SQL editor keeps
+its own Find behavior. File tabs and File info sections each have one Tab stop;
+Left/Right and Home/End switch the active tab within that group. Closing a panel
+returns focus to the data grid. Nested inspector disclosure buttons support
+Enter/Space and expose their expanded state. Labels follow the application's language.
+
+The UI tests enable `gpui-kit/test-support` only as a development dependency and
+exercise real headless key and pointer dispatch. They cover focus traversal,
+clipboard serialization, tab closure, panel dismissal and accessible names. Native
+screen readers, OS IME/clipboard integration and visual focus-ring appearance still
+require platform testing.

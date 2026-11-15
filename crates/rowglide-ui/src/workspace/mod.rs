@@ -69,6 +69,14 @@ pub(crate) struct Workspace {
     table: Entity<TableState<Grid>>,
     /// Stable focus target for opening files, including the empty workspace.
     open_focus: FocusHandle,
+    /// One keyboard entry point shared by the currently active file tab.
+    tabs_focus: FocusHandle,
+    /// Horizontal file-tab scroll position, used to reveal keyboard selections.
+    tabs_scroll: ScrollHandle,
+    /// Horizontal metadata-tab scroll position for narrow detail panels.
+    info_tabs_scroll: ScrollHandle,
+    /// One keyboard entry point for the active metadata section.
+    info_tabs_focus: FocusHandle,
     /// Editable Browse text filter control.
     search: Entity<InputState>,
     /// Editable Browse page-size control.
@@ -227,6 +235,10 @@ impl Workspace {
             results,
             table,
             open_focus: cx.focus_handle().tab_stop(true),
+            tabs_focus: cx.focus_handle().tab_stop(true),
+            tabs_scroll: ScrollHandle::new(),
+            info_tabs_scroll: ScrollHandle::new(),
+            info_tabs_focus: cx.focus_handle().tab_stop(true),
             search,
             limit,
             offset,
@@ -385,6 +397,7 @@ impl Render for Workspace {
             .child(
                 self.keyboard_grid(cx).flex_1().min_w_0().h_full().child(
                     DataTable::new(&self.table)
+                        .accessibility_label(tr!("a11y.data_table"))
                         // Stop at the first and last row without exposing overscroll space.
                         .scroll_bounce(false)
                         .stripe(false)

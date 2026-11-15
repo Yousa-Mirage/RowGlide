@@ -163,5 +163,12 @@
     "entry": "条目",
     "key": "键",
     "value": "值"
+  },
+  "a11y": {
+    "data_table": "查询结果",
+    "filter": "浏览筛选",
+    "sql_editor": "SQL 查询",
+    "metadata_table": "Parquet 元信息",
+    "toggle_node": "展开或折叠 %{name}"
   }
 }

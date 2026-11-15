@@ -67,11 +67,9 @@ impl Workspace {
                             .small()
                             .ghost()
                             .icon(IconName::Close)
+                            .accessibility_label(tr!("inspector.close"))
                             .tooltip(tr!("inspector.close"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.selected = None;
-                                cx.notify();
-                            })),
+                            .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx))),
                     ),
             )
             .child(
@@ -123,30 +121,31 @@ impl Workspace {
                 .ml(px(depth as f32 * 12.))
                 .rounded_md()
                 .hover(|s| s.bg(hover_background))
-                .when(has_children, |node| node.cursor_pointer())
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if !has_children {
-                        return;
-                    }
-                    if !this.expanded.remove(&click_path) {
-                        this.expanded.insert(click_path.clone());
-                    }
-                    cx.notify();
-                }))
-                .when(depth > 0 || has_children, |node| {
+                .when(has_children, |node| {
+                    node.child(
+                        base::Button::new(SharedString::from(format!("expand-{path}")))
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
+                            .text_xs()
+                            .focus_visible(|style| style.border_1().border_color(cx.theme().ring))
+                            .child(format!("{} {}", if open { "▾" } else { "▸" }, label))
+                            .accessibility_label(tr!("a11y.toggle_node", name = label))
+                            .aria_expanded(open)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if !this.expanded.remove(&click_path) {
+                                    this.expanded.insert(click_path.clone());
+                                }
+                                cx.notify();
+                            })),
+                    )
+                })
+                .when(depth > 0 && !has_children, |node| {
                     node.child(
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child(format!(
-                                "{} {}",
-                                if has_children {
-                                    if open { "▾" } else { "▸" }
-                                } else {
-                                    "·"
-                                },
-                                label
-                            )),
+                            .child(label.clone()),
                     )
                 })
                 .child(

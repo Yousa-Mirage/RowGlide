@@ -11,6 +11,7 @@ use gpui_kit::component::{
     tab::{Tab, TabBar},
     table::DataTable,
 };
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use rowglide_core::ParquetSection;
 
@@ -33,6 +34,7 @@ impl Workspace {
                 cx.new(|_| drag.clone())
             });
         let mut panel = div()
+            .key_context("RowglideInfo")
             .relative()
             .w(self.file_info_width)
             .max_w(relative(0.65))
@@ -62,7 +64,7 @@ impl Workspace {
                             .small()
                             .ghost()
                             .label(tr!("common.close"))
-                            .on_click(cx.listener(|this, _, _, cx| this.close_file_info(cx))),
+                            .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx))),
                     ),
             )
             .child(
@@ -76,6 +78,7 @@ impl Workspace {
             )
             .child(
                 TabBar::new("file-info-sections")
+                    .track_scroll(&self.info_tabs_scroll)
                     .small()
                     .underline()
                     .px_3()
@@ -88,10 +91,46 @@ impl Workspace {
                             tr!("info.metadata"),
                         ]
                         .into_iter()
-                        .map(|name| Tab::new().label(name).px_2()),
+                        .enumerate()
+                        .map(|(tab_index, name)| {
+                            Tab::new()
+                                .label(name)
+                                .px_2()
+                                .when(tab_index == index, |tab| {
+                                    tab.track_focus(&self.info_tabs_focus).tab_stop(true)
+                                })
+                                .focus_visible(|style| {
+                                    style.border_1().border_color(cx.theme().ring)
+                                })
+                                .on_key_down(cx.listener(
+                                    move |this, event: &KeyDownEvent, window, cx| {
+                                        if !this.info_tabs_focus.is_focused(window)
+                                            || event.keystroke.modifiers.modified()
+                                        {
+                                            return;
+                                        }
+                                        if let Some(next) =
+                                            crate::workspace::actions::tab_destination(
+                                                &event.keystroke.key,
+                                                index,
+                                                4,
+                                            )
+                                        {
+                                            if next != index {
+                                                this.select_info_section(next, cx);
+                                            }
+                                            this.info_tabs_scroll.scroll_to_item(next);
+                                            cx.notify();
+                                            this.info_tabs_focus.focus(window, cx);
+                                            cx.stop_propagation();
+                                        }
+                                    },
+                                ))
+                        }),
                     )
-                    .on_click(cx.listener(|this, index: &usize, _, cx| {
-                        this.select_info_section(*index, cx)
+                    .on_click(cx.listener(|this, index: &usize, window, cx| {
+                        this.select_info_section(*index, cx);
+                        this.info_tabs_focus.focus(window, cx);
                     })),
             );
         if section.is_none() {
@@ -170,6 +209,7 @@ impl Workspace {
                     .overflow_hidden()
                     .child(
                         DataTable::new(&self.file_info.table)
+                            .accessibility_label(tr!("a11y.metadata_table"))
                             .scroll_bounce(false)
                             .small()
                             .stripe(false)

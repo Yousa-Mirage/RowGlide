@@ -20,25 +20,54 @@ impl Workspace {
     /// source ID and stops propagation so closing does not also select a shifted tab.
     pub(super) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         TabBar::new("open-file-tabs")
+            .track_scroll(&self.tabs_scroll)
             .folder()
             .selected_index(self.active_tab)
-            .children(self.tabs.iter().map(|tab| {
+            .children(self.tabs.iter().enumerate().map(|(index, tab)| {
                 let source = tab.source.id;
-                Tab::new().label(tab.source.name.clone()).suffix(
-                    Button::new(("close-file-tab", source))
-                        .xsmall()
-                        .ghost()
-                        .icon(IconName::Close)
-                        .tooltip(tr!("files.close", name = tab.source.name))
-                        .on_click(cx.listener(move |this, _, window, cx| {
+                Tab::new()
+                    .label(tab.source.name.clone())
+                    .when(index == self.active_tab, |tab| {
+                        tab.track_focus(&self.tabs_focus).tab_stop(true)
+                    })
+                    .focus_visible(|style| style.border_1().border_color(cx.theme().ring))
+                    .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        if !this.tabs_focus.is_focused(window)
+                            || event.keystroke.modifiers.modified()
+                        {
+                            return;
+                        }
+                        if let Some(index) = super::actions::tab_destination(
+                            &event.keystroke.key,
+                            this.active_tab,
+                            this.tabs.len(),
+                        ) {
+                            this.switch_tab(index, window, cx);
+                            this.tabs_scroll.scroll_to_item(index);
+                            cx.notify();
+                            this.tabs_focus.focus(window, cx);
                             cx.stop_propagation();
-                            this.close_tab(source, window, cx);
-                        })),
-                )
+                        }
+                    }))
+                    .suffix(
+                        Button::new(("close-file-tab", source))
+                            .xsmall()
+                            .ghost()
+                            .icon(IconName::Close)
+                            .tab_stop(false)
+                            .accessibility_label(tr!("files.close", name = tab.source.name))
+                            .tooltip(tr!("files.close", name = tab.source.name))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                cx.stop_propagation();
+                                this.close_tab(source, window, cx);
+                                this.focus_content(window, cx);
+                            })),
+                    )
             }))
-            .on_click(
-                cx.listener(|this, index: &usize, window, cx| this.switch_tab(*index, window, cx)),
-            )
+            .on_click(cx.listener(|this, index: &usize, window, cx| {
+                this.switch_tab(*index, window, cx);
+                this.tabs_focus.focus(window, cx);
+            }))
     }
 
     /// Build the compact Browse filter, Limit/Offset, Apply/Reset and SQL toggle row.
@@ -50,6 +79,7 @@ impl Workspace {
         let border = cx.theme().border;
         let sql_mode = self.active_tab().mode == TabMode::Sql;
         div()
+            .key_context("RowglideBrowse")
             .px_5()
             .py_2()
             .flex()
@@ -59,25 +89,33 @@ impl Workspace {
             .border_color(border)
             .flex_shrink_0()
             .child(
-                div()
-                    .flex_1()
-                    .min_w(px(160.))
-                    .max_w(px(320.))
-                    .child(Input::new(&self.search).small().disabled(sql_mode)),
+                div().flex_1().min_w(px(160.)).max_w(px(320.)).child(
+                    Input::new(&self.search)
+                        .id("browse-filter")
+                        .aria_label(tr!("a11y.filter"))
+                        .small()
+                        .disabled(sql_mode),
+                ),
             )
             .child(div().text_xs().child(tr!("browse.limit")))
             .child(
-                div()
-                    .w(px(80.))
-                    .flex_shrink_0()
-                    .child(Input::new(&self.limit).small().disabled(sql_mode)),
+                div().w(px(80.)).flex_shrink_0().child(
+                    Input::new(&self.limit)
+                        .id("browse-limit")
+                        .aria_label(tr!("browse.limit"))
+                        .small()
+                        .disabled(sql_mode),
+                ),
             )
             .child(div().text_xs().child(tr!("browse.offset")))
             .child(
-                div()
-                    .w(px(80.))
-                    .flex_shrink_0()
-                    .child(Input::new(&self.offset).small().disabled(sql_mode)),
+                div().w(px(80.)).flex_shrink_0().child(
+                    Input::new(&self.offset)
+                        .id("browse-offset")
+                        .aria_label(tr!("browse.offset"))
+                        .small()
+                        .disabled(sql_mode),
+                ),
             )
             .child(
                 Button::new("filter")
@@ -165,9 +203,11 @@ impl Workspace {
                     ),
             )
             .child(
-                div()
-                    .key_context("RowglideSql")
-                    .child(Editor::new(&self.sql).h(px(95.))),
+                div().key_context("RowglideSql").child(
+                    Editor::new(&self.sql)
+                        .aria_label(tr!("a11y.sql_editor"))
+                        .h(px(95.)),
+                ),
             )
             .child(
                 div()

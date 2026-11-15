@@ -35,9 +35,30 @@ pub(super) struct CloseTab;
 #[action(namespace = rowglide, no_json)]
 pub(super) struct Dismiss;
 
+/// Leave the SQL editor for the next visible keyboard control.
+#[derive(Clone, PartialEq, Debug, Default, Action)]
+#[action(namespace = rowglide, no_json)]
+pub(super) struct NextControl;
+/// Leave the SQL editor for the previous visible keyboard control.
+#[derive(Clone, PartialEq, Debug, Default, Action)]
+#[action(namespace = rowglide, no_json)]
+pub(super) struct PreviousControl;
+
 /// Install bindings after component initialization, using Cmd on macOS and Ctrl elsewhere.
 pub(super) fn init(cx: &mut App) {
     cx.bind_keys([
+        KeyBinding::new(
+            if cfg!(target_os = "macos") {
+                "cmd-f"
+            } else {
+                "ctrl-f"
+            },
+            Find,
+            Some("RowglideBrowse > Input"),
+        ),
+        KeyBinding::new("tab", NextControl, Some("RowglideSql > Input")),
+        KeyBinding::new("shift-tab", PreviousControl, Some("RowglideSql > Input")),
+        KeyBinding::new("escape", Dismiss, Some("RowglideInfo > DataTable")),
         KeyBinding::new(
             if cfg!(target_os = "macos") {
                 "cmd-enter"
@@ -105,6 +126,11 @@ impl Workspace {
         div()
             .id("workspace")
             .key_context("Rowglide")
+            .on_action(|_: &NextControl, window, cx| window.focus_next(cx))
+            .on_action(|_: &PreviousControl, window, cx| window.focus_prev(cx))
+            .on_action(
+                cx.listener(|this, _: &base::input::Escape, window, cx| this.dismiss(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &Find, window, cx| {
                 if !this.tabs.is_empty() && this.active_tab().mode == TabMode::Browse {
                     this.search.focus_handle(cx).focus(window, cx);
@@ -145,10 +171,11 @@ impl Workspace {
     fn start_cell_navigation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.table.focus_handle(cx).is_focused(window)
             && self.table.read(cx).selected_cell().is_none()
-            && self.table.read(cx).delegate().copy_target(0, 0).is_some()
         {
-            self.table
-                .update(cx, |table, cx| table.set_selected_cell(0, 0, cx));
+            if self.table.read(cx).delegate().copy_target(0, 0).is_some() {
+                self.table
+                    .update(cx, |table, cx| table.set_selected_cell(0, 0, cx));
+            }
             cx.stop_propagation();
         }
     }
@@ -234,7 +261,10 @@ impl Workspace {
         } else if self.selected.is_some() || self.pending_cell.is_some() {
             self.selected = None;
             self.pending_cell = None;
-        } else if self.table.read(cx).selected_cell().is_some() {
+        } else if !matches!(
+            self.table.read(cx).selection(),
+            component::table::TableSelection::None
+        ) {
             self.table.update(cx, |table, cx| table.clear_selection(cx));
         } else {
             cx.propagate();
@@ -242,5 +272,18 @@ impl Workspace {
         }
         self.focus_content(window, cx);
         cx.notify();
+    }
+}
+
+/// Return the next active tab for unmodified navigation keys, clamping at either end.
+/// Empty groups and unrelated keys have no destination.
+pub(super) fn tab_destination(key: &str, current: usize, count: usize) -> Option<usize> {
+    let last = count.checked_sub(1)?;
+    match key {
+        "left" => Some(current.saturating_sub(1)),
+        "right" => Some(current.saturating_add(1).min(last)),
+        "home" => Some(0),
+        "end" => Some(last),
+        _ => None,
     }
 }

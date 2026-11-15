@@ -163,5 +163,12 @@
     "entry": "entry",
     "key": "key",
     "value": "value"
+  },
+  "a11y": {
+    "data_table": "Query results",
+    "filter": "Browse filter",
+    "sql_editor": "SQL query",
+    "metadata_table": "Parquet metadata",
+    "toggle_node": "Expand or collapse %{name}"
   }
 }
