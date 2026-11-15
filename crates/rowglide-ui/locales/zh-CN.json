@@ -21,7 +21,8 @@
     "open": "打开文件…",
     "prompt": "打开 CSV 或 Parquet 文件",
     "inspecting": "正在读取文件信息…",
-    "close": "关闭 %{name}"
+    "close": "关闭 %{name}",
+    "drop": "松开以打开文件"
   },
   "browse": {
     "limit": "每页行数",

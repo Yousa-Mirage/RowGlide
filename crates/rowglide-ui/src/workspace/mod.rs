@@ -332,9 +332,12 @@ impl Render for Workspace {
     /// virtualized table, optional inspector and compact status/navigation bar. Query
     /// execution remains in event handlers rather than this render method.
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let root = self
+            .keyboard_root(cx)
+            .relative()
+            .on_drop(cx.listener(Self::drop_files));
         if self.tabs.is_empty() {
-            return self
-                .keyboard_root(cx)
+            return root
                 .size_full()
                 .flex()
                 .flex_col()
@@ -363,6 +366,7 @@ impl Render for Workspace {
                         .justify_end()
                         .child(self.render_memory(cx)),
                 )
+                .child(self.render_file_drop_hint(cx))
                 .into_any_element();
         }
         let mut content = div()
@@ -413,8 +417,7 @@ impl Render for Workspace {
 
         content = content.child(body).child(self.render_status(cx));
 
-        self.keyboard_root(cx)
-            .size_full()
+        root.size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .font_family(".SystemUIFont")
@@ -432,6 +435,7 @@ impl Render for Workspace {
                     .child(self.render_open_button(cx)),
             )
             .child(content)
+            .child(self.render_file_drop_hint(cx))
             .into_any_element()
     }
 }

@@ -1,14 +1,62 @@
-//! Native file selection, startup paths and shared background schema inspection.
+//! Native file selection, external drops, startup paths and shared background inspection.
+
+#[cfg(test)]
+mod tests;
 
 use crate::i18n::{tr, tr_string};
 
 use super::{Workspace, state::TabState};
-use gpui_kit::component::{Sizable, button::Button};
+use gpui_kit::base::TestSupportExt;
+use gpui_kit::component::{
+    ActiveTheme, Sizable, WindowExt, button::Button, notification::Notification,
+};
 use gpui_kit::*;
 use rowglide_core::Cancellation;
 use std::path::PathBuf;
 
+/// Identifies the latest file-opening failure notification independently of query status.
+struct OpenFailure;
+
 impl Workspace {
+    /// Forward OS file paths to the shared asynchronous opener without inspecting the filesystem.
+    /// Empty payloads are harmless; backend validation reports directories and unsupported files.
+    /// GPUI invokes this only when an external file drag is submitted inside the workspace.
+    pub(super) fn drop_files(
+        &mut self,
+        paths: &ExternalPaths,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_paths(paths.paths().to_vec(), window, cx);
+    }
+
+    /// Render a layout-neutral hint only while OS file paths hover over the workspace.
+    /// GPUI owns drag lifetime, so leaving or ending a drag clears this without retained UI state.
+    /// Internal divider drags use another payload type and never activate this overlay.
+    pub(super) fn render_file_drop_hint(&self, cx: &App) -> impl IntoElement {
+        div()
+            .id("file-drop-hint")
+            .test_support()
+            .absolute()
+            .inset_0()
+            .border_2()
+            .border_color(cx.theme().ring)
+            .opacity(0.)
+            .drag_over::<ExternalPaths>(|style, _, _, _| style.opacity(1.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    .px_4()
+                    .py_2()
+                    .rounded_md()
+                    .bg(cx.theme().popover)
+                    .text_color(cx.theme().popover_foreground)
+                    .child(tr!("files.drop")),
+            )
+    }
+
     /// Close one source tab, cancelling active work and releasing its retained results.
     /// Closing an inactive tab preserves the current query and drafts. The active tab
     /// falls forward to its right neighbor, then left, or back to the empty view.
@@ -121,12 +169,14 @@ impl Workspace {
         .detach();
     }
 
-    /// Inspect picker or startup paths off the GUI thread, then activate the last success.
+    /// Inspect picker, dropped or startup paths off the GUI thread, then activate the last success.
     ///
     /// Empty input is a no-op. New work cancels previous inspection and ignores stale
     /// completion. Canonical duplicate sources reuse tabs; per-file failures are
     /// collected for display without preventing other files from opening. Activation
     /// saves the current session and uses its normal query-cancellation lifecycle.
+    /// Successful activation reveals the tab and focuses the grid. Failures remain in a
+    /// dismissible notification so a sibling file's query cannot overwrite their report.
     pub(super) fn open_paths(
         &mut self,
         paths: Vec<PathBuf>,
@@ -199,10 +249,22 @@ impl Workspace {
                     } else if !this.active_tab().browse_result.initialized {
                         this.restore_session(window, cx);
                     }
+                    this.tabs_scroll.scroll_to_item(index);
+                    this.focus_content(window, cx);
                 }
                 if !errors.is_empty() {
-                    this.status = errors.join("; ");
-                    this.error = true;
+                    let message = errors.join("; ");
+                    if !this.busy {
+                        this.status = message.clone();
+                        this.error = true;
+                    }
+                    // Keep opening failures independent of an in-flight query's status.
+                    window.push_notification(
+                        Notification::error(message)
+                            .id::<OpenFailure>()
+                            .autohide(false),
+                        cx,
+                    );
                 }
                 cx.notify();
             });

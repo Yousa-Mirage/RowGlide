@@ -21,7 +21,8 @@
     "open": "Open files…",
     "prompt": "Open CSV or Parquet files",
     "inspecting": "Inspecting files…",
-    "close": "Close %{name}"
+    "close": "Close %{name}",
+    "drop": "Drop files to open"
   },
   "browse": {
     "limit": "Limit",

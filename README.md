@@ -393,3 +393,15 @@ exercise real headless key and pointer dispatch. They cover focus traversal,
 clipboard serialization, tab closure, panel dismissal and accessible names. Native
 screen readers, OS IME/clipboard integration and visual focus-ring appearance still
 require platform testing.
+
+
+## Drag and drop files
+
+Drop one or more local files anywhere in the workspace content area, including the
+empty window, to open them. A border and hint mark the drop target while hovering;
+leaving the window does not open anything. Files use the same background opener as
+the picker and startup arguments: duplicate paths reuse existing tabs, supported
+types are validated by the backend, and directories are rejected without recursion.
+The last successful file becomes active. Failed files are reported in a dismissible
+notification even when other files in the same drop open successfully. A newer open
+request cancels pending inspection from the previous request.
