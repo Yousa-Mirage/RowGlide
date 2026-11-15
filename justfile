@@ -1,5 +1,7 @@
 alias check := lint
+alias fmt := lint
 alias doc := document
+alias mac := bundle-macos
 
 # List available development commands.
 default:
