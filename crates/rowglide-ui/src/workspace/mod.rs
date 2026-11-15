@@ -24,6 +24,22 @@ use gpui_kit::*;
 use rowglide_core::{Backend, BrowsePage, Cancellation, Query};
 use std::{collections::HashSet, sync::Arc};
 
+/// Identifies which right-side panel a divider drag resizes.
+#[derive(Clone)]
+enum ResizePanel {
+    /// Selected-cell preview, with its own remembered width.
+    Inspector,
+    /// Parquet metadata, independent of the cell preview width.
+    FileInfo,
+}
+
+impl Render for ResizePanel {
+    /// The divider provides drag feedback without a floating preview.
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+    }
+}
+
 /// Owns the active GUI controls and coordinates independent per-file sessions.
 ///
 /// Tabs retain Browse/SQL queries, drafts and inactive results; the table owns the
@@ -90,6 +106,8 @@ pub(crate) struct Workspace {
     selected: Option<(String, ArrayRef, usize)>,
     /// Preferred inspector width, shared across cells and retained while the panel is closed.
     inspector_width: Pixels,
+    /// Preferred metadata panel width, retained across sections, files and panel closure.
+    file_info_width: Pixels,
     /// Clicked SQL cell awaiting an asynchronous cache read; cleared on session changes.
     pending_cell: Option<(usize, usize)>,
     /// Expanded inspector node paths for the active result.
@@ -223,6 +241,7 @@ impl Workspace {
             file_info: file_info::InfoView::new(window, cx),
             selected: None,
             inspector_width: px(320.),
+            file_info_width: px(480.),
             pending_cell: None,
             expanded: HashSet::new(),
         };
@@ -341,14 +360,18 @@ impl Render for Workspace {
             .flex_1()
             .min_h_0()
             .flex()
-            .on_drag_move(cx.listener(
-                |this, event: &DragMoveEvent<inspector::ResizeInspector>, _, cx| {
+            .on_drag_move(
+                cx.listener(|this, event: &DragMoveEvent<ResizePanel>, _, cx| {
                     let maximum = (event.bounds.size.width * 0.65).max(px(1.));
-                    this.inspector_width = (event.bounds.right() - event.event.position.x)
-                        .clamp(px(240.).min(maximum), maximum);
+                    let (width, minimum) = match event.drag(cx) {
+                        ResizePanel::Inspector => (&mut this.inspector_width, px(240.)),
+                        ResizePanel::FileInfo => (&mut this.file_info_width, px(320.)),
+                    };
+                    *width = (event.bounds.right() - event.event.position.x)
+                        .clamp(minimum.min(maximum), maximum);
                     cx.notify();
-                },
-            ))
+                }),
+            )
             .child(
                 div().flex_1().min_w_0().h_full().child(
                     DataTable::new(&self.table)

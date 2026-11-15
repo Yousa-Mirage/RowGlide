@@ -1,9 +1,11 @@
 //! Compact file summary and paged metadata presentation beside the data table.
 
 use super::{Workspace, table::limited_text, value_text};
+use crate::workspace::ResizePanel;
 use gpui_kit::component::{
     ActiveTheme, Disableable, Sizable,
     button::{Button, ButtonVariants},
+    resizable::{HandleEdge, resize_handle},
     tab::{Tab, TabBar},
     table::DataTable,
 };
@@ -11,7 +13,7 @@ use gpui_kit::*;
 use rowglide_core::ParquetSection;
 
 impl Workspace {
-    /// Render the fixed-width side panel with header, compact section tabs and bounded content.
+    /// Render the resizable side panel with header, compact section tabs and bounded content.
     pub(in crate::workspace) fn render_file_info(
         &self,
         cx: &mut Context<Self>,
@@ -23,8 +25,15 @@ impl Workspace {
             Some(ParquetSection::RowGroups) => 2,
             Some(ParquetSection::KeyValue) => 3,
         };
+        let handle = resize_handle("file-info-divider", Axis::Horizontal)
+            .inside(HandleEdge::Leading)
+            .on_drag(ResizePanel::FileInfo, |drag, _, _, cx| {
+                cx.new(|_| drag.clone())
+            });
         let mut panel = div()
-            .w(px(480.))
+            .relative()
+            .w(self.file_info_width)
+            .max_w(relative(0.65))
             .flex_shrink_0()
             .h_full()
             .min_h_0()
@@ -79,7 +88,10 @@ impl Workspace {
                     })),
             );
         if section.is_none() {
-            return panel.child(self.render_file_overview()).into_any_element();
+            return panel
+                .child(self.render_file_overview())
+                .child(handle)
+                .into_any_element();
         }
         let hint = match section {
             Some(ParquetSection::Schema) => {
@@ -237,6 +249,7 @@ impl Workspace {
                             .on_click(cx.listener(|this, _, _, cx| this.turn_info_page(true, cx))),
                     ),
             )
+            .child(handle)
             .into_any_element()
     }
 

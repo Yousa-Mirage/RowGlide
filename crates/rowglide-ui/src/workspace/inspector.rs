@@ -1,6 +1,6 @@
 //! Selected-cell details and expandable nested values.
 
-use super::Workspace;
+use super::{ResizePanel, Workspace};
 use crate::cells;
 use crate::clipboard::{CopyTarget, copy_menu};
 use arrow_array::ArrayRef;
@@ -12,17 +12,6 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-
-/// Identifies inspector-divider drags without attaching a visible drag preview.
-#[derive(Clone)]
-pub(super) struct ResizeInspector;
-
-impl Render for ResizeInspector {
-    /// The divider itself provides feedback; no floating preview follows the pointer.
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div()
-    }
-}
 
 impl Workspace {
     /// Build a resizable panel headed by the selected column's name and Arrow type.
@@ -94,7 +83,9 @@ impl Workspace {
             .child(
                 resize_handle("inspector-divider", Axis::Horizontal)
                     .inside(HandleEdge::Leading)
-                    .on_drag(ResizeInspector, |drag, _, _, cx| cx.new(|_| drag.clone())),
+                    .on_drag(ResizePanel::Inspector, |drag, _, _, cx| {
+                        cx.new(|_| drag.clone())
+                    }),
             )
     }
 
