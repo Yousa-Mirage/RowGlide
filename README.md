@@ -2,6 +2,32 @@
 
 A native data browser built with Rust and [GPUI Kit](https://github.com/longbridge/gpui-kit).
 
+## Download builds
+
+The **Build binaries** GitHub Actions workflow builds every pushed tag. It also
+supports **Actions → Build binaries → Run workflow** once the workflow is on the
+default branch. Ordinary branch pushes do not trigger it.
+
+After a successful job, download its artifact from the workflow run's **Artifacts**
+section. Artifacts are retained for 30 days and contain a second archive:
+
+| Platform | Artifact | Contents |
+| --- | --- | --- |
+| Linux x64 | `rowglide-x86_64-unknown-linux-gnu` | `.tar.gz` with `rowglide` |
+| Windows x64 | `rowglide-x86_64-pc-windows-msvc` | `.zip` with `rowglide.exe` |
+| macOS Apple Silicon | `rowglide-aarch64-apple-darwin` | `.tar.gz` with `Rowglide.app` |
+| macOS Intel | `rowglide-x86_64-apple-darwin` | `.tar.gz` with `Rowglide.app` |
+
+Extract both archives before running. Unix archives retain executable permissions.
+Each package includes the license, this README, and `build-info.json` identifying
+the source commit and tag/branch. Builds use stable Rust, `Cargo.lock`, and the
+release profile; they do not publish a GitHub Release.
+
+These are unsigned builds without installers or macOS notarization. Linux builds
+target Ubuntu 24.04 and need compatible system libraries and graphics drivers;
+they are not self-contained AppImages. Windows may require the Microsoft Visual
+C++ Redistributable for x64. Cross-platform startup still needs manual validation.
+
 ## Run
 
 ```sh
