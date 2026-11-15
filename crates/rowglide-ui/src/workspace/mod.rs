@@ -88,6 +88,8 @@ pub(crate) struct Workspace {
     sql_open: bool,
     /// Selected column label, retained Arrow array and row for the inspector.
     selected: Option<(String, ArrayRef, usize)>,
+    /// Preferred inspector width, shared across cells and retained while the panel is closed.
+    inspector_width: Pixels,
     /// Clicked SQL cell awaiting an asynchronous cache read; cleared on session changes.
     pending_cell: Option<(usize, usize)>,
     /// Expanded inspector node paths for the active result.
@@ -220,6 +222,7 @@ impl Workspace {
             sql_open: false,
             file_info: file_info::InfoView::new(window, cx),
             selected: None,
+            inspector_width: px(320.),
             pending_cell: None,
             expanded: HashSet::new(),
         };
@@ -334,16 +337,28 @@ impl Render for Workspace {
         }
 
         // The table fills the remaining space beside the optional inspector.
-        let mut body = div().flex_1().min_h_0().flex().child(
-            div().flex_1().min_w_0().h_full().child(
-                DataTable::new(&self.table)
-                    // Stop at the first and last row without exposing overscroll space.
-                    .scroll_bounce(false)
-                    .stripe(false)
-                    .bordered(false)
-                    .small(),
-            ),
-        );
+        let mut body = div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .on_drag_move(cx.listener(
+                |this, event: &DragMoveEvent<inspector::ResizeInspector>, _, cx| {
+                    let maximum = (event.bounds.size.width * 0.65).max(px(1.));
+                    this.inspector_width = (event.bounds.right() - event.event.position.x)
+                        .clamp(px(240.).min(maximum), maximum);
+                    cx.notify();
+                },
+            ))
+            .child(
+                div().flex_1().min_w_0().h_full().child(
+                    DataTable::new(&self.table)
+                        // Stop at the first and last row without exposing overscroll space.
+                        .scroll_bounce(false)
+                        .stripe(false)
+                        .bordered(false)
+                        .small(),
+                ),
+            );
         if self.active_tab().info.open && self.active_tab().source.parquet.is_some() {
             body = body.child(self.render_file_info(cx));
         } else if let Some((name, array, row)) = self.selected.clone() {

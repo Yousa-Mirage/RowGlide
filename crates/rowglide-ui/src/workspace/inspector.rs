@@ -5,14 +5,27 @@ use crate::cells;
 use crate::clipboard::{CopyTarget, copy_menu};
 use arrow_array::ArrayRef;
 use gpui_kit::component::{
-    ActiveTheme, Sizable,
+    ActiveTheme, IconName, Sizable,
     button::{Button, ButtonVariants},
     menu::ContextMenuExt,
+    resizable::{HandleEdge, resize_handle},
 };
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
+/// Identifies inspector-divider drags without attaching a visible drag preview.
+#[derive(Clone)]
+pub(super) struct ResizeInspector;
+
+impl Render for ResizeInspector {
+    /// The divider itself provides feedback; no floating preview follows the pointer.
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+    }
+}
+
 impl Workspace {
-    /// Build the fixed-width panel for one selected Arrow cell and its nested children.
+    /// Build a resizable panel headed by the selected column's name and Arrow type.
     ///
     /// `name` labels the source column; `row` indexes the supplied shared array. The
     /// array reference keeps data alive while the panel is visible. A close action
@@ -26,47 +39,49 @@ impl Workspace {
     ) -> impl IntoElement {
         let border = rgb(0xe4e8e7);
         div()
-            .w(px(272.))
+            .relative()
+            .w(self.inspector_width)
+            .max_w(relative(0.65))
             .flex_shrink_0()
             .h_full()
+            .min_h_0()
             .border_l_1()
             .border_color(border)
             .flex()
             .flex_col()
             .child(
                 div()
-                    .p_4()
+                    .px_3()
+                    .py_2()
+                    .flex_shrink_0()
                     .flex()
                     .items_center()
-                    .justify_between()
+                    .gap_2()
                     .child(
                         div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .text_ellipsis()
                             .text_sm()
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child("Cell inspector"),
+                            .child(format!(
+                                "{} · {}",
+                                name,
+                                cells::type_label(array.data_type())
+                            )),
                     )
                     .child(
                         Button::new("close-inspector")
                             .small()
                             .ghost()
-                            .label("×")
+                            .icon(IconName::Close)
+                            .tooltip("Close cell inspector")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.selected = None;
                                 cx.notify();
                             })),
                     ),
-            )
-            .child(
-                div()
-                    .px_4()
-                    .pb_3()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(format!(
-                        "{} · {}",
-                        name,
-                        cells::type_label(array.data_type())
-                    )),
             )
             .child(
                 div()
@@ -76,6 +91,11 @@ impl Workspace {
                     .overflow_y_scroll()
                     .child(self.tree(name, array, row, "value".into(), 0, cx)),
             )
+            .child(
+                resize_handle("inspector-divider", Axis::Horizontal)
+                    .inside(HandleEdge::Leading)
+                    .on_drag(ResizeInspector, |drag, _, _, cx| cx.new(|_| drag.clone())),
+            )
     }
 
     /// Render one expandable inspector node and its currently expanded descendants.
@@ -84,6 +104,8 @@ impl Workspace {
     /// stops below depth 12. Children retain typed Arrow references and list/map child
     /// counts are capped by `cells::children`. This is a bounded recursive tree, not a
     /// virtualized or complete export of arbitrarily large nested values.
+    /// Root scalars omit the repeated field label; child names and expandable roots
+    /// retain their labels and disclosure indicators.
     fn tree(
         &self,
         label: String,
@@ -107,27 +129,32 @@ impl Workspace {
                 .ml(px(depth as f32 * 12.))
                 .rounded_md()
                 .hover(|s| s.bg(rgb(0xf0f3f2)))
-                .cursor_pointer()
+                .when(has_children, |node| node.cursor_pointer())
                 .on_click(cx.listener(move |this, _, _, cx| {
+                    if !has_children {
+                        return;
+                    }
                     if !this.expanded.remove(&click_path) {
                         this.expanded.insert(click_path.clone());
                     }
                     cx.notify();
                 }))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(format!(
-                            "{} {}",
-                            if has_children {
-                                if open { "▾" } else { "▸" }
-                            } else {
-                                "·"
-                            },
-                            label
-                        )),
-                )
+                .when(depth > 0 || has_children, |node| {
+                    node.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(format!(
+                                "{} {}",
+                                if has_children {
+                                    if open { "▾" } else { "▸" }
+                                } else {
+                                    "·"
+                                },
+                                label
+                            )),
+                    )
+                })
                 .child(
                     div()
                         .text_sm()
