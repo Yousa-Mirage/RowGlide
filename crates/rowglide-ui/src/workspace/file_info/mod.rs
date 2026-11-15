@@ -308,6 +308,8 @@ mod tests {
     #[test]
     fn source_counts_distinguish_zero_unknown_and_non_parquet() {
         let mut source = Source {
+            schema: std::sync::Arc::new(arrow_schema::Schema::empty()),
+            schema_revision: 0,
             id: 0,
             name: "empty.parquet".into(),
             format: "PARQUET",

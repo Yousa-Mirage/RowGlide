@@ -12,6 +12,10 @@ use arrow_schema::SchemaRef;
 pub struct Source {
     /// Backend-local handle used by `Query::source`.
     pub id: usize,
+    /// Registered source schema, independent of SQL projections and retained results.
+    pub schema: SchemaRef,
+    /// Incremented on successful reload; zero identifies the initial registration.
+    pub schema_revision: u64,
     /// Human-readable file or fixture name displayed in Folder Tabs.
     pub name: String,
     /// Reader format label, currently `PARQUET` or `CSV` for local files.
@@ -47,6 +51,10 @@ pub struct Query {
     pub source: usize,
     /// Case-insensitive substring searched across supported text columns in Browse.
     pub search: String,
+    /// AND-connected typed predicates applied before sorting and paging.
+    pub filters: Vec<crate::FilterCondition>,
+    /// Expected source schema revision for Browse; explicit SQL ignores it.
+    pub schema_revision: u64,
     /// Optional global Browse sort; `None` retains source order.
     pub sort: Option<Sort>,
 

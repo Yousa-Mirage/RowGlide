@@ -12,6 +12,7 @@ publish = false
 rowglide-core = { path = "crates/rowglide-core" }
 rowglide-ui = { path = "crates/rowglide-ui" }
 
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 arrow-array = "60"
 arrow-cast = "60"
 arrow-ipc = "60"

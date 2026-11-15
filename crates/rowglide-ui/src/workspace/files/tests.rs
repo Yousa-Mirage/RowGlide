@@ -55,6 +55,8 @@ impl Backend for OpeningBackend {
             return Ok(source.clone());
         }
         let source = Source {
+            schema: Arc::new(arrow_schema::Schema::empty()),
+            schema_revision: 0,
             id: files.len(),
             name: path.display().to_string(),
             format: "PARQUET",

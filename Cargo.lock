@@ -6432,6 +6432,7 @@ dependencies = [
  "arrow-ipc",
  "arrow-schema",
  "async-channel",
+ "chrono",
  "dirs 7.0.0",
  "duckdb",
  "futures-lite",

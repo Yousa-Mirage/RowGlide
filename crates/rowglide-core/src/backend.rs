@@ -63,6 +63,9 @@ impl Cancellation {
 /// only application-generated messages and non-ownable synchronization errors use text.
 #[derive(Debug, thiserror::Error)]
 pub enum QueryError {
+    /// Typed Browse predicate validation failed before execution.
+    #[error(transparent)]
+    Filter(#[from] crate::FilterError),
     /// The request's cancellation token was observed by background work.
     #[error("Query cancelled")]
     Cancelled,

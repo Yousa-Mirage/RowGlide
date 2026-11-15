@@ -51,11 +51,24 @@ fn changed_parquet_requires_reload() -> Result<(), Box<dyn Error>> {
     assert_eq!(reloaded.id, source.id);
     assert_eq!(reloaded.rows, Some(23));
     assert!(!backend.source_changed(source.id)?);
+    assert!(matches!(
+        backend.query(
+            Query {
+                source: source.id,
+                ..Query::default()
+            },
+            Cancellation::default()
+        ),
+        Err(QueryError::Filter(
+            rowglide_core::FilterError::SchemaChanged
+        ))
+    ));
     let cancel = Cancellation::default();
     let preview = Preview::collect(
         backend.query(
             Query {
                 source: source.id,
+                schema_revision: reloaded.schema_revision,
                 ..Query::default()
             },
             cancel.clone(),

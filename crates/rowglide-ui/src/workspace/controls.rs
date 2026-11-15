@@ -140,6 +140,7 @@ impl Workspace {
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.query = Query {
                             source: this.query.source,
+                            schema_revision: this.active_tab().source.schema_revision,
                             limit: Some(BrowsePage::default().limit()),
                             ..Default::default()
                         };

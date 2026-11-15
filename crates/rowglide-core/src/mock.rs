@@ -41,6 +41,8 @@ impl Backend for MockBackend {
         vec![
             Source {
                 id: 0,
+                schema: schema(true),
+                schema_revision: 0,
                 name: "customers.parquet".into(),
                 format: "PARQUET",
                 rows: Some(50000),
@@ -49,6 +51,8 @@ impl Backend for MockBackend {
             },
             Source {
                 id: 1,
+                schema: schema(false),
+                schema_revision: 0,
                 name: "orders.csv".into(),
                 format: "CSV",
                 rows: Some(2400),
@@ -57,6 +61,8 @@ impl Backend for MockBackend {
             },
             Source {
                 id: 2,
+                schema: schema(true),
+                schema_revision: 0,
                 name: "empty.parquet".into(),
                 format: "PARQUET",
                 rows: Some(0),

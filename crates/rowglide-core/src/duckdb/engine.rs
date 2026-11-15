@@ -150,6 +150,10 @@ impl DuckDbBackend {
         }
         let info = Source {
             id: replacing.unwrap_or(files.len()),
+            schema: schema.clone(),
+            schema_revision: replacing
+                .and_then(|id| files[id].as_ref())
+                .map_or(0, |old| old.info.schema_revision + 1),
             name: path.file_name().map_or_else(
                 || path.display().to_string(),
                 |name| name.to_string_lossy().into_owned(),
@@ -350,6 +354,9 @@ impl Backend for DuckDbBackend {
             .get(query.source)
             .and_then(Clone::clone)
             .ok_or_else(|| QueryError::Invalid("File is no longer available".into()))?;
+        if query.sql.is_none() && query.schema_revision != file.info.schema_revision {
+            return Err(crate::FilterError::SchemaChanged.into());
+        }
         stream::start(file, query, cancel, self.gate.clone())
     }
 }

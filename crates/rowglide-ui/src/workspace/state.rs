@@ -166,6 +166,7 @@ impl TabState {
         Self {
             browse: Query {
                 source: source.id,
+                schema_revision: source.schema_revision,
                 limit: Some(BrowsePage::default().limit()),
                 ..Query::default()
             },
@@ -338,6 +339,8 @@ mod tests {
     /// Construct a minimal one-row source tab for pure state tests without GPUI setup.
     fn tab(id: usize) -> TabState {
         TabState::new(Source {
+            schema: Arc::new(Schema::empty()),
+            schema_revision: 0,
             id,
             name: format!("{id}.parquet"),
             format: "PARQUET",
