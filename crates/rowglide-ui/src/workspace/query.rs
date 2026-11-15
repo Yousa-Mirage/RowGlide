@@ -179,9 +179,9 @@ impl Workspace {
 
     /// Replace the active request and collect its result away from the GUI thread.
     ///
-    /// Cancels the preceding token, advances request identity, clears selection/page
-    /// metadata and enters loading state. Browse collects a complete bounded page;
-    /// SQL starts a continuously generated disk-backed result. Completion updates status
+    /// Cancels the preceding token and advances request identity. Browse retains its
+    /// applied page while collecting a complete bounded replacement; SQL clears its
+    /// previous session and starts a continuously generated cached result. Completion updates status
     /// only if tab, mode and generation still match, resets scrolling for nonempty
     /// results, and reports errors without publishing partial Browse pages. Changed or
     /// reloading sources are rejected before altering the current result.
@@ -241,7 +241,13 @@ impl Workspace {
         let key = self.request_key();
         let candidate = self.query.clone();
         let draft = self.browse_draft(cx);
-        let normalize = (candidate.sort == self.active_tab().browse.sort
+        let ranges_match = draft.page().is_ok_and(|page| {
+            Some(page.limit()) == candidate.limit && page.offset() == candidate.offset
+        });
+        let predicates_changed = candidate.search != self.active_tab().browse.search
+            || candidate.filters != self.active_tab().browse.filters;
+        let normalize = (ranges_match
+            || predicates_changed
             || draft.matches_query(&self.active_tab().browse))
             && draft.search.trim() == candidate.search
             && draft
@@ -257,6 +263,10 @@ impl Workspace {
         self.busy = true;
         self.error = false;
         self.status = tr_string!("query.loading");
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().loading = !table.delegate().has_result();
+            cx.notify();
+        });
         let backend = self.backend.clone();
         let cancel = self.cancellation.clone();
         let query = candidate.clone();
@@ -350,8 +360,8 @@ impl Workspace {
 
     /// Signal query cancellation, release the UI task handle and invalidate late results.
     ///
-    /// Clears the busy/loading flags and displays cancellation status. A running query
-    /// retains its previous Browse result/page metadata. This does not join DuckDB on
+    /// Clears the busy/loading flags and displays cancellation status. Browse retains
+    /// its previous result/page metadata; SQL retains already committed batches. This does not join DuckDB on
     /// the GUI thread; background cursor cleanup releases engine resources.
     pub(super) fn cancel(&mut self, cx: &mut Context<Self>) {
         self.sizing_task = None;
@@ -363,6 +373,9 @@ impl Workspace {
         self.status = tr_string!("query.cancelled");
         if !self.sql_open && !self.tabs.is_empty() {
             self.query = self.active_tab().browse.clone();
+            if self.table.read(cx).delegate().has_result() {
+                self.status = tr_string!("filters.previous", error = self.status);
+            }
         }
         if let Some(result) = &self.table.read(cx).delegate().sql_result {
             result.cancel();

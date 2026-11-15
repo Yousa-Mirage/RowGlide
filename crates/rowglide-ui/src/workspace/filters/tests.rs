@@ -83,6 +83,13 @@ fn drafts_survive_sessions_and_are_bounded(cx: &mut TestAppContext) {
                 );
                 assert_eq!(this.filter_editors.len(), rowglide_core::MAX_FILTERS);
             });
+            window.render_frame(cx);
+            let first = view.read(cx).active_tab().drafts.filters[0].id;
+            let last = view.read(cx).active_tab().drafts.filters[rowglide_core::MAX_FILTERS - 1].id;
+            let viewport = window.find("filter-rows").bounds();
+            assert!(viewport.size.height <= gpui_kit::px(224.));
+            assert!(window.find(("filter-row", first)).bounds().size.height >= gpui_kit::px(24.));
+            assert!(window.find(("filter-row", last)).bounds().bottom() > viewport.bottom());
         })?;
         Ok(())
     })();

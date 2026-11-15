@@ -81,6 +81,7 @@ impl Workspace {
             .child(
                 div()
                     .id("filter-rows")
+                    .test_support()
                     .max_h(px(224.))
                     .overflow_y_scroll()
                     .flex()
@@ -277,6 +278,8 @@ impl Workspace {
         }
         div()
             .id(("filter-row", id))
+            .test_support()
+            .flex_shrink_0()
             .flex()
             .items_center()
             .gap_2()

@@ -105,7 +105,8 @@
   },
   "table": {
     "empty_browse": "源文件没有数据行",
-    "empty_sql": "没有可显示的 SQL 结果 · 请执行查询"
+    "empty_sql": "没有可显示的 SQL 结果 · 请执行查询",
+    "no_result": "尚未加载结果 · 点击应用加载数据页"
   },
   "errors": {
     "close_file": "无法关闭文件：%{error}",

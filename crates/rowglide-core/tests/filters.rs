@@ -178,9 +178,9 @@ fn predicates_precede_paging_and_sql_is_independent() -> Result<(), Box<dyn Erro
     Ok(())
 }
 
-/// Missing text columns and hostile column names produce explicit validation or literal matching.
+/// A numeric-only source reports an explicit Quick Search capability error.
 #[test]
-fn no_text_and_quoted_names() -> Result<(), Box<dyn Error>> {
+fn no_text_columns() -> Result<(), Box<dyn Error>> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("number.csv");
     std::fs::write(&path, "number\n1\n2\n")?;
@@ -197,5 +197,191 @@ fn no_text_and_quoted_names() -> Result<(), Box<dyn Error>> {
         ),
         Err(QueryError::Filter(FilterError::NoTextColumns))
     ));
+    Ok(())
+}
+
+/// Quotes in identifiers and SQL-shaped values stay literal; temporal binds preserve UTC instants.
+#[test]
+fn hostile_identifiers_and_zoned_time() -> Result<(), Box<dyn Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("quoted.parquet");
+    let conn = duckdb::Connection::open_in_memory()?;
+    conn.execute(
+        "SET VARIABLE output = ?",
+        [path.to_str().ok_or("Invalid path")?],
+    )?;
+    conn.execute_batch("COPY (SELECT 1::UBIGINT AS id, 'x'' OR true --' AS \"a\"\"b\", TIMESTAMPTZ '2026-01-01 00:00:00.123456+00' AS moment) TO (getvariable('output')) (FORMAT PARQUET)")?;
+    let backend = DuckDbBackend::default();
+    let source = backend.open(&path, Cancellation::default())?;
+    let query = Query {
+        source: source.id,
+        filters: vec![
+            compare(
+                1,
+                CompareOp::Equals,
+                FilterValue::Text("x' OR true --".into()),
+            ),
+            compare(
+                2,
+                CompareOp::Equals,
+                FilterValue::Timestamp("2026-01-01T08:00:00.123456+08:00".into()),
+            ),
+        ],
+        ..Query::default()
+    };
+    assert_eq!(ids(&backend, query.clone())?, vec![1]);
+    let mut nonmatch = query.clone();
+    nonmatch.filters[0] = compare(
+        1,
+        CompareOp::Equals,
+        FilterValue::Text("' OR 1=1 --".into()),
+    );
+    assert!(ids(&backend, nonmatch)?.is_empty());
+    let mut lossy = query;
+    lossy.filters[1] = compare(
+        2,
+        CompareOp::Equals,
+        FilterValue::Timestamp("2026-01-01T00:00:00.123456789Z".into()),
+    );
+    assert!(matches!(
+        backend.query(lossy, Cancellation::default()),
+        Err(QueryError::Filter(_))
+    ));
+    Ok(())
+}
+
+/// Empty Parquet files retain their source schema and validate predicates before scanning.
+#[test]
+fn empty_source_still_validates_filters() -> Result<(), Box<dyn Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("empty.parquet");
+    let conn = duckdb::Connection::open_in_memory()?;
+    conn.execute(
+        "SET VARIABLE output = ?",
+        [path.to_str().ok_or("Invalid path")?],
+    )?;
+    conn.execute_batch("COPY (SELECT 1::UBIGINT AS id, 'x' AS text WHERE false) TO (getvariable('output')) (FORMAT PARQUET)")?;
+    let backend = DuckDbBackend::default();
+    let source = backend.open(&path, Cancellation::default())?;
+    assert_eq!(source.schema.fields().len(), 2);
+    assert!(
+        ids(
+            &backend,
+            Query {
+                source: source.id,
+                filters: vec![compare(
+                    1,
+                    CompareOp::Equals,
+                    FilterValue::Text(String::new())
+                )],
+                ..Query::default()
+            }
+        )?
+        .is_empty()
+    );
+    assert!(matches!(
+        backend.query(
+            Query {
+                source: source.id,
+                filters: vec![FilterCondition::IsNull {
+                    column: 2,
+                    negated: false
+                }],
+                ..Query::default()
+            },
+            Cancellation::default()
+        ),
+        Err(QueryError::Filter(_))
+    ));
+    Ok(())
+}
+
+/// A sparse predicate is evaluated across the whole Mock source before sorting and paging.
+#[test]
+fn mock_global_predicates_and_sql_isolation() -> Result<(), Box<dyn Error>> {
+    use arrow_array::Int64Array;
+    use rowglide_core::{MockBackend, Preview, Sort};
+    let query = Query {
+        filters: vec![compare(
+            0,
+            CompareOp::GreaterThan,
+            FilterValue::Integer(49000),
+        )],
+        sort: Some(Sort {
+            column: 0,
+            descending: true,
+        }),
+        limit: Some(2),
+        offset: 3,
+        ..Query::default()
+    };
+    let cancel = Cancellation::default();
+    let preview = Preview::collect(MockBackend.query(query, cancel.clone())?, &cancel)?;
+    let ids = preview.batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .ok_or("Expected signed IDs")?;
+    assert_eq!(ids.values().as_ref(), &[59997, 59996]);
+    let preview = Preview::collect(
+        MockBackend.query(
+            Query {
+                sql: Some("SELECT * FROM current_file LIMIT 100;".into()),
+                search: "absent".into(),
+                filters: vec![FilterCondition::IsNull {
+                    column: 999,
+                    negated: false,
+                }],
+                schema_revision: 999,
+                offset: 99999,
+                limit: Some(0),
+                ..Query::default()
+            },
+            cancel.clone(),
+        )?,
+        &cancel,
+    )?;
+    assert_eq!(preview.rows, 100);
+    cancel.cancel();
+    assert!(matches!(
+        MockBackend.query(Query::default(), cancel),
+        Err(QueryError::Cancelled)
+    ));
+    Ok(())
+}
+
+/// Sparse matches near a large source's end are selected before a small page is materialized.
+#[test]
+fn sparse_source_filtering_and_cancellation() -> Result<(), Box<dyn Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("sparse.parquet");
+    let conn = duckdb::Connection::open_in_memory()?;
+    conn.execute(
+        "SET VARIABLE output = ?",
+        [path.to_str().ok_or("Invalid path")?],
+    )?;
+    conn.execute_batch("COPY (SELECT i::UBIGINT AS id, 'value-' || i::VARCHAR AS text FROM range(200000) t(i)) TO (getvariable('output')) (FORMAT PARQUET)")?;
+    let backend = DuckDbBackend::default();
+    let source = backend.open(&path, Cancellation::default())?;
+    let query = Query {
+        source: source.id,
+        filters: vec![compare(
+            0,
+            CompareOp::GreaterThan,
+            FilterValue::Unsigned(199990),
+        )],
+        sort: Some(rowglide_core::Sort {
+            column: 0,
+            descending: true,
+        }),
+        limit: Some(2),
+        offset: 3,
+        ..Query::default()
+    };
+    assert_eq!(ids(&backend, query.clone())?, vec![199996, 199995]);
+    let cancel = Cancellation::default();
+    let mut cursor = backend.query(query, cancel.clone())?;
+    cancel.cancel();
+    assert!(matches!(cursor.next_batch(), Err(QueryError::Cancelled)));
     Ok(())
 }

@@ -245,8 +245,8 @@ impl TableDelegate for Grid {
 
     /// Render the centered empty-state hint for Browse or SQL mode.
     ///
-    /// The message depends on whether sorting is enabled; query failures and more
-    /// specific status information are shown separately by the workspace.
+    /// Browse uses the successful applied page's predicate/range context. Before a
+    /// result exists it prompts for execution; SQL has its own empty-result label.
     fn render_empty(
         &mut self,
         _: &mut Window,
@@ -258,7 +258,9 @@ impl TableDelegate for Grid {
             .items_center()
             .justify_center()
             .text_color(cx.theme().muted_foreground)
-            .child(if self.sortable {
+            .child(if self.sortable && !self.has_result() {
+                tr!("table.no_result")
+            } else if self.sortable {
                 self.empty_label.clone()
             } else {
                 tr!("table.empty_sql")

@@ -357,7 +357,7 @@ mod tests {
         assert!(
             parse_filter_value(
                 &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
-                "2026-01-01T00:00:00.123456789Z"
+                "2026-01-01T00:00:00.123456000Z"
             )
             .is_ok()
         );

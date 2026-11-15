@@ -260,7 +260,10 @@ impl Workspace {
             let (op, value) = match condition {
                 FilterCondition::Compare { op, value, .. } => (
                     operator_label(Some(*op), false),
-                    format!(" {:?}", value.input()),
+                    match value {
+                        rowglide_core::FilterValue::Text(text) => format!(" {text:?}"),
+                        _ => format!(" {}", value.input()),
+                    },
                 ),
                 FilterCondition::IsNull { negated, .. } => {
                     (operator_label(None, *negated), String::new())

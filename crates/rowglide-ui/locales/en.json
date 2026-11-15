@@ -105,7 +105,8 @@
   },
   "table": {
     "empty_browse": "The source contains no rows",
-    "empty_sql": "No SQL rows to display · run a query"
+    "empty_sql": "No SQL rows to display · run a query",
+    "no_result": "No result loaded · Apply to load a page"
   },
   "errors": {
     "close_file": "Cannot close file: %{error}",

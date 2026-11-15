@@ -493,3 +493,119 @@ async fn filter_apply_preserves_old_page_until_success(cx: &mut TestAppContext) 
     .await;
     assert!(outcome.is_ok(), "{outcome:?}");
 }
+
+/// Cancellation and backend errors retain the last page and its applied predicates.
+#[gpui_kit::test]
+async fn browse_failure_and_cancel_retain_results(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestAppContextExt;
+    let outcome = async {
+        let (handle, view) = fixture(cx)?;
+        let rows = cx.update_window(handle, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                let rows = view
+                    .table
+                    .read(cx)
+                    .delegate()
+                    .preview
+                    .as_ref()
+                    .map(|p| p.rows);
+                view.search
+                    .update(cx, |input, cx| input.set_value("London", window, cx));
+                view.apply_filter(window, cx);
+                view.cancel(cx);
+                assert!(view.active_tab().browse.search.is_empty());
+                assert_eq!(
+                    view.table
+                        .read(cx)
+                        .delegate()
+                        .preview
+                        .as_ref()
+                        .map(|p| p.rows),
+                    rows
+                );
+                view.query.source = usize::MAX;
+                view.run(window, cx);
+                rows
+            })
+        })?;
+        cx.wait_for(handle, std::time::Duration::from_secs(5), |_, cx| {
+            !view.read(cx).busy
+        })
+        .await;
+        cx.update_window(handle, |_, _, cx| {
+            let view = view.read(cx);
+            assert!(view.error);
+            assert!(view.active_tab().browse.search.is_empty());
+            assert_eq!(
+                view.table
+                    .read(cx)
+                    .delegate()
+                    .preview
+                    .as_ref()
+                    .map(|p| p.rows),
+                rows
+            );
+        })?;
+        Ok::<(), Box<dyn std::error::Error>>(())
+    }
+    .await;
+    assert!(outcome.is_ok(), "{outcome:?}");
+}
+
+/// Completion and sorting preserve edits made after submission; only applied predicates execute.
+#[gpui_kit::test]
+async fn browse_completion_preserves_new_drafts(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestAppContextExt;
+    let outcome = async {
+        let (handle, view) = fixture(cx)?;
+        cx.update_window(handle, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                view.search
+                    .update(cx, |input, cx| input.set_value(" London ", window, cx));
+                view.apply_filter(window, cx);
+                view.search
+                    .update(cx, |input, cx| input.set_value("Tokyo", window, cx));
+                view.offset
+                    .update(cx, |input, cx| input.set_value("5000", window, cx));
+            });
+        })?;
+        cx.wait_for(handle, std::time::Duration::from_secs(5), |_, cx| {
+            !view.read(cx).busy
+        })
+        .await;
+        cx.update_window(handle, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                assert_eq!(view.active_tab().browse.search, "London");
+                assert_eq!(view.browse_draft(cx).search, "Tokyo");
+                assert!(!view.can_turn_page(true, cx));
+                view.query = view.active_tab().browse.clone();
+                view.query.sort = Some(rowglide_core::Sort {
+                    column: 0,
+                    descending: true,
+                });
+                view.query.offset = 0;
+                view.run(window, cx);
+            });
+        })?;
+        cx.wait_for(handle, std::time::Duration::from_secs(5), |_, cx| {
+            !view.read(cx).busy
+        })
+        .await;
+        cx.update_window(handle, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                assert_eq!(view.browse_draft(cx).search, "Tokyo");
+                assert_eq!(view.browse_draft(cx).offset, "5000");
+                assert_eq!(view.active_tab().browse.search, "London");
+                view.discard_filter_drafts(window, cx);
+                view.offset
+                    .update(cx, |input, cx| input.set_value("12", window, cx));
+                view.apply_filter(window, cx);
+                assert_eq!(view.query.offset, 12);
+                view.cancel(cx);
+            });
+        })?;
+        Ok::<(), Box<dyn std::error::Error>>(())
+    }
+    .await;
+    assert!(outcome.is_ok(), "{outcome:?}");
+}

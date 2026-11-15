@@ -106,19 +106,6 @@ fn parameter(value: FilterValue, data_type: &DataType) -> Result<(Value, String)
                     TimeUnit::Nanosecond => "TIMESTAMP_NS",
                 }
             };
-            // DuckDB zoned timestamps have microsecond precision. Never discard finer literals.
-            if zone.is_some()
-                && chrono::DateTime::parse_from_rfc3339(&value)
-                    .map_err(|_| FilterError::Value("an ISO timestamp"))?
-                    .timestamp_subsec_nanos()
-                    % 1000
-                    != 0
-            {
-                return Err(FilterError::Value(
-                    "a zoned timestamp with at most microsecond precision",
-                )
-                .into());
-            }
             expression = format!("CAST(? AS {target})");
             Value::Text(value)
         }

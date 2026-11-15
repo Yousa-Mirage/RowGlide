@@ -92,10 +92,45 @@ open target/Rowglide.app
 
 Use **Open files…** to select local `.parquet`, `.pq`, or `.csv` files. Files open
 in folder tabs with independent Browse and SQL sessions. Browse supports text
-search across string columns, scalar sorting, Limit and Offset. SQL supports a
+Quick Search across text columns, typed Filters, scalar sorting, Limit and Offset. SQL supports a
 single SELECT/WITH query against `current_file`, including aggregates and joins.
 The status bar shows whole-process resident memory (RSS), sampled in the background
 once per second and displayed in MiB/GiB. An unavailable reading appears as `—`.
+
+## Browse filters
+
+Click **Filters (0)** to expand the condition editor. Choose a source column,
+operator and value, then **Apply**. Up to 32 top-level scalar conditions are joined
+with AND and evaluated across the complete source before sorting and pagination.
+SQL remains independent of all Browse controls.
+
+- Text supports literal, case-insensitive contains / starts with / ends with, and
+  case-sensitive equality / inequality. `%` and `_` are ordinary characters.
+- Signed and unsigned integers retain their full ranges. Decimals are validated
+  against the source precision and scale without floating-point conversion.
+  Float literals must be finite; boolean values use a Yes/No selector.
+- Dates use `YYYY-MM-DD`. Timestamps use `YYYY-MM-DDTHH:mm:ss[.fraction]`;
+  zoned columns require `Z` or an explicit offset and normalize to UTC. Zoned
+  precision is at most microseconds; unzoned nanosecond timestamps remain exact.
+- **is null** differs from **equals ""**. Ordinary comparisons, including `!=`,
+  exclude NULL. Use SQL for OR groups, nested fields, Float16, decimals beyond
+  38 digits or negative decimal scales, and other unsupported source types.
+- **Quick Search** searches all text columns, trims outer whitespace on Apply,
+  and is disabled when the source has no text columns. Condition text preserves
+  whitespace and empty strings. Dictionary columns follow their decoded type.
+
+Each file preserves its own drafts and panel state. **Clear filters** clears only
+condition drafts; **Cancel** restores all Browse drafts from the last successful
+query. **Reset** clears predicates and restores the default first page. Changing
+predicates resets Offset to zero; changing only Limit/Offset honors the entered
+range. Sorting keeps applied predicates and returns to the first page.
+
+Unapplied edits disable page navigation. A replacement page becomes visible only
+after successful completion; validation errors, query failures and cancellation
+keep the last successful page. Edits made while a request runs survive completion.
+The applied summary and filter count describe the displayed result, without an
+extra COUNT query. **Cmd/Ctrl+F** opens Filters and focuses Quick Search when available.
+Reloading a changed file clears filters tied to the old source schema.
 
 ## Theme
 

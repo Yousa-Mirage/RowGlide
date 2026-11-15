@@ -198,6 +198,13 @@ fn timestamp(input: &str, data_type: &DataType) -> Result<String, FilterError> {
     if utc.nanosecond() >= 1_000_000_000 || utc.nanosecond() % divisor != 0 {
         return Err(error());
     }
+    // The supported zoned engine representation is microseconds; reject lossy input
+    // in the shared validator so UI and backend enforce the same boundary.
+    if zone.is_some() && utc.nanosecond() % 1000 != 0 {
+        return Err(FilterError::Value(
+            "a zoned timestamp with at most microsecond precision",
+        ));
+    }
     let ticks = i128::from(utc.timestamp()) * (1_000_000_000 / i128::from(divisor))
         + i128::from(utc.nanosecond() / divisor);
     i64::try_from(ticks).map_err(|_| error())?;

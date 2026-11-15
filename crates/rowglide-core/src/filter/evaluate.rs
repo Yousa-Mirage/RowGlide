@@ -5,7 +5,7 @@ use super::{
     parse_filter_value, validate_filters,
 };
 use crate::{Cancellation, Query, QueryError};
-use arrow_array::{Array, ArrayRef, RecordBatch};
+use arrow_array::{Array, ArrayRef, Float32Array, Float64Array, RecordBatch};
 use std::cmp::Ordering;
 
 /// Return matching local row indices after validating and decoding one bounded Arrow batch.
@@ -107,9 +107,13 @@ fn compare(
     }
     let ordering = match value {
         FilterValue::Float(expected) => {
-            let actual = text
-                .parse::<f64>()
-                .map_err(|_| super::FilterError::ValueType)?;
+            let actual = if let Some(array) = array.as_any().downcast_ref::<Float32Array>() {
+                f64::from(array.value(row))
+            } else if let Some(array) = array.as_any().downcast_ref::<Float64Array>() {
+                array.value(row)
+            } else {
+                return Err(super::FilterError::ValueType.into());
+            };
             if actual.is_nan() {
                 Ordering::Greater
             } else {
@@ -177,6 +181,78 @@ fn timestamp_ticks(text: &str) -> Result<(i64, u32), QueryError> {
 mod tests {
     use super::*;
     use crate::FilterCondition;
+
+    /// Dictionary nulls follow decoded values; Float32 comparisons retain their binary precision.
+    #[test]
+    fn dictionary_nulls_and_float32() -> Result<(), Box<dyn std::error::Error>> {
+        use arrow_array::{DictionaryArray, Int8Array, StringArray, types::Int8Type};
+        use std::sync::Arc;
+        let dictionary = DictionaryArray::<Int8Type>::try_new(
+            Int8Array::from(vec![Some(0), Some(1), None, Some(2)]),
+            Arc::new(StringArray::from(vec![Some("London"), None, Some("")])),
+        )?;
+        let batch = RecordBatch::try_from_iter([
+            ("text", Arc::new(dictionary) as ArrayRef),
+            (
+                "float",
+                Arc::new(Float32Array::from(vec![0.1, 0.2, 0.3, 0.4])) as ArrayRef,
+            ),
+        ])?;
+        for (condition, expected) in [
+            (
+                FilterCondition::IsNull {
+                    column: 0,
+                    negated: false,
+                },
+                vec![1, 2],
+            ),
+            (
+                FilterCondition::Compare {
+                    column: 0,
+                    op: CompareOp::Equals,
+                    value: FilterValue::Text(String::new()),
+                },
+                vec![3],
+            ),
+            (
+                FilterCondition::Compare {
+                    column: 1,
+                    op: CompareOp::Equals,
+                    value: FilterValue::Float(0.1),
+                },
+                vec![],
+            ),
+            (
+                FilterCondition::Compare {
+                    column: 1,
+                    op: CompareOp::Equals,
+                    value: FilterValue::Float(f64::from(0.1_f32)),
+                },
+                vec![0],
+            ),
+        ] {
+            let query = Query {
+                filters: vec![condition],
+                ..Query::default()
+            };
+            assert_eq!(
+                matching_rows(&batch, &query, &Cancellation::default())?,
+                expected
+            );
+        }
+        let conn = duckdb::Connection::open_in_memory()?;
+        let matches: bool = conn.query_row("SELECT 0.1::FLOAT = ?", [0.1_f64], |row| row.get(0))?;
+        assert!(!matches);
+        let query = Query {
+            search: " london ".into(),
+            ..Query::default()
+        };
+        assert_eq!(
+            matching_rows(&batch, &query, &Cancellation::default())?,
+            vec![0]
+        );
+        Ok(())
+    }
 
     /// Compare the evaluator and DuckDB on identical Arrow batches across exact scalar families.
     #[test]

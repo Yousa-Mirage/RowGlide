@@ -99,6 +99,13 @@ impl Backend for MockBackend {
             ids.extend(0..source.rows.unwrap_or(0));
         } else {
             crate::validate_filters(&source.schema, &query.filters)?;
+            if !query.search.trim().is_empty()
+                && !source.schema.fields().iter().any(|field| {
+                    crate::filter_kind(field.data_type()) == Some(crate::FilterKind::Text)
+                })
+            {
+                return Err(crate::FilterError::NoTextColumns.into());
+            }
             let mut cursor = MockCursor {
                 schema: source.schema.clone(),
                 ids: (0..source.rows.unwrap_or(0)).collect(),
