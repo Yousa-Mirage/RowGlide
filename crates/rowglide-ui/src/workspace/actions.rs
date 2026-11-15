@@ -133,7 +133,11 @@ impl Workspace {
             )
             .on_action(cx.listener(|this, _: &Find, window, cx| {
                 if !this.tabs.is_empty() && this.active_tab().mode == TabMode::Browse {
-                    this.search.focus_handle(cx).focus(window, cx);
+                    this.active_tab_mut().filters_open = true;
+                    if this.has_search_columns() && !this.active_tab().changed {
+                        this.search.focus_handle(cx).focus(window, cx);
+                    }
+                    cx.notify();
                 } else {
                     cx.propagate();
                 }

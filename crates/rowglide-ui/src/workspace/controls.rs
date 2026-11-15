@@ -95,13 +95,17 @@ impl Workspace {
             .border_color(border)
             .flex_shrink_0()
             .child(
-                div().flex_1().min_w(px(160.)).max_w(px(320.)).child(
-                    Input::new(&self.search)
-                        .id("browse-filter")
-                        .aria_label(tr!("a11y.filter"))
-                        .small()
-                        .disabled(sql_mode || blocked),
-                ),
+                Button::new("filters-toggle")
+                    .small()
+                    .label(tr!(
+                        "filters.count",
+                        count = self.active_tab().browse.filters.len()
+                    ))
+                    .disabled(sql_mode || blocked)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.active_tab_mut().filters_open = !this.active_tab().filters_open;
+                        cx.notify();
+                    })),
             )
             .child(div().text_xs().child(tr!("browse.limit")))
             .child(
@@ -147,6 +151,7 @@ impl Workspace {
 
                         this.active_tab_mut().drafts = super::state::BrowseDraft::default();
                         this.reset_inputs(window, cx);
+                        this.sync_filter_editors(window, cx);
 
                         this.run(window, cx);
                     })),
@@ -336,6 +341,15 @@ impl Workspace {
                             .text_color(cx.theme().muted_foreground)
                             .child(label),
                     )
+                },
+            )
+            .when(
+                !self.sql_open && !self.active_tab().browse.filters.is_empty(),
+                |bar| {
+                    bar.child(div().text_xs().child(tr!(
+                        "filters.count",
+                        count = self.active_tab().browse.filters.len()
+                    )))
                 },
             )
             .child(self.render_memory(cx))

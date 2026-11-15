@@ -60,7 +60,7 @@ pub(crate) fn initialize() {
 /// verbatim rather than translated by brittle string matching.
 pub(crate) fn query_error(error: &QueryError) -> String {
     match error {
-        QueryError::Filter(error) => error.to_string(),
+        QueryError::Filter(error) => filter_error(error),
         QueryError::SourceChanged => tr_string!("files.changed"),
         QueryError::Cancelled => tr_string!("errors.cancelled"),
         QueryError::Data(source) => tr_string!("errors.arrow", error = source),
@@ -72,6 +72,26 @@ pub(crate) fn query_error(error: &QueryError) -> String {
             tr_string!("errors.cache_read", error = query_error(source))
         }
         QueryError::Invalid(message) | QueryError::Backend(message) => message.clone(),
+    }
+}
+
+/// Translate structural predicate errors; preserve exact parser expectations as diagnostics.
+fn filter_error(error: &rowglide_core::FilterError) -> String {
+    use rowglide_core::FilterError;
+    match error {
+        FilterError::TooMany => tr_string!("filters.too_many"),
+        FilterError::SchemaChanged => tr_string!("filters.schema"),
+        FilterError::Column(column) => tr_string!("filters.bad_column", column = column + 1),
+        FilterError::UnsupportedType => tr_string!("filters.unsupported"),
+        FilterError::Operator => tr_string!("filters.bad_operator"),
+        FilterError::Value(detail) => tr_string!("filters.bad_value", detail = detail),
+        FilterError::ValueType => tr_string!("filters.value_type"),
+        FilterError::NoTextColumns => tr_string!("filters.no_text"),
+        FilterError::Condition { index, source } => tr_string!(
+            "filters.condition",
+            index = index,
+            error = filter_error(source)
+        ),
     }
 }
 

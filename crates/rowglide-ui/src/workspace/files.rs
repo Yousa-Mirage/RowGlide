@@ -107,6 +107,7 @@ impl Workspace {
 
         super::state::remove_tab(&mut self.tabs, &mut self.active_tab, index);
         if self.tabs.is_empty() {
+            self.filter_editors.clear();
             self.query = Default::default();
             self.sql_open = false;
             self.error = false;

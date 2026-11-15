@@ -196,6 +196,8 @@ pub(super) struct TabState {
     pub(super) mode: TabMode,
     /// Saved Browse control strings, including unapplied changes.
     pub(super) drafts: BrowseDraft,
+    /// Whether this tab exposes its filter editor in Browse mode.
+    pub(super) filters_open: bool,
     /// Most recently submitted SQL text, or None before the first execution.
     pub(super) last_sql: Option<String>,
     /// Browse-only page metadata, retained buffers and inspector state.
@@ -223,6 +225,7 @@ impl TabState {
             sql: "SELECT * FROM current_file LIMIT 100;".into(),
             mode: TabMode::Browse,
             drafts: BrowseDraft::default(),
+            filters_open: false,
             last_sql: None,
             browse_result: ResultState::default(),
             sql_result: ResultState::default(),

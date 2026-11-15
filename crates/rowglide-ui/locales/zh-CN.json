@@ -104,7 +104,7 @@
     "failed": "复制失败：%{error}"
   },
   "table": {
-    "empty_browse": "没有可显示的行 · 请尝试其他筛选条件",
+    "empty_browse": "源文件没有数据行",
     "empty_sql": "没有可显示的 SQL 结果 · 请执行查询"
   },
   "errors": {
@@ -183,5 +183,37 @@
     "sql_editor": "SQL 查询",
     "metadata_table": "Parquet 元信息",
     "toggle_node": "展开或折叠 %{name}"
+  },
+  "filters": {
+    "search": "快捷搜索",
+    "no_text": "该文件没有文本列",
+    "unapplied": "尚未应用",
+    "add": "+ 添加条件",
+    "clear": "清空条件",
+    "help": "所有条件以 AND 连接 · 最多 32 条 · 嵌套或不支持的字段请使用 SQL",
+    "column": "列",
+    "operator": "操作符",
+    "value": "值",
+    "true": "是",
+    "false": "否",
+    "remove": "删除条件",
+    "count": "筛选（%{count}）",
+    "applied": "已应用：%{conditions}",
+    "is_null": "为空值",
+    "not_null": "非空值",
+    "contains": "包含",
+    "starts": "开头是",
+    "ends": "结尾是",
+    "no_match": "没有行匹配当前搜索和筛选",
+    "offset_empty": "当前偏移量没有数据，请返回第一页。",
+    "previous": "%{error} · 本次未应用，保留上次结果",
+    "too_many": "最多允许 32 个条件",
+    "schema": "源字段发生变化，请重新建立筛选",
+    "bad_column": "第 %{column} 列已不可用",
+    "unsupported": "不支持此字段类型，请使用 SQL",
+    "bad_operator": "此字段不支持该操作符",
+    "bad_value": "无效的值：%{detail}",
+    "value_type": "值类型与字段不一致",
+    "condition": "第 %{index} 个条件：%{error}"
   }
 }

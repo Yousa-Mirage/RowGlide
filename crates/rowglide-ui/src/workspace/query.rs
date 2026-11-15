@@ -49,7 +49,7 @@ impl Workspace {
     /// the user was editing.
     pub(super) fn browse_draft(&self, cx: &App) -> BrowseDraft {
         BrowseDraft {
-            filters: self.active_tab().drafts.filters.clone(),
+            filters: self.filter_drafts(cx),
             search: self.search.read(cx).value().to_string(),
             limit: self.limit.read(cx).value().to_string(),
             offset: self.offset.read(cx).value().to_string(),
@@ -303,9 +303,11 @@ impl Workspace {
                         this.pending_cell = None;
                         this.expanded.clear();
                         let widths = this.active_tab().browse_result.widths.clone();
+                        let empty_label = this.browse_empty_label(&candidate);
                         this.table.update(cx, |table, cx| {
                             table.clear_selection(cx);
                             let grid = table.delegate_mut();
+                            grid.empty_label = empty_label;
                             grid.preview = Some(preview);
                             grid.sql_result = None;
                             grid.sql_snapshot = None;
@@ -336,6 +338,9 @@ impl Workspace {
         self.busy = false;
         self.error = !matches!(error, QueryError::Cancelled);
         self.status = crate::i18n::query_error(&error);
+        if !self.sql_open && self.table.read(cx).delegate().has_result() {
+            self.status = tr_string!("filters.previous", error = self.status);
+        }
         self.table.update(cx, |table, cx| {
             table.delegate_mut().loading = false;
             table.refresh(cx);
@@ -438,9 +443,11 @@ impl Workspace {
         self.expanded = expanded;
         let sortable = !self.sql_open;
         let sort = if sortable { self.query.sort } else { None };
+        let empty_label = self.browse_empty_label(&self.query);
         self.table.update(cx, |table, cx| {
             let grid = table.delegate_mut();
             grid.widths = widths;
+            grid.empty_label = empty_label;
             grid.preview = preview;
             grid.sql_snapshot = sql_result.as_ref().map(|result| result.snapshot());
             grid.sql_result = sql_result;

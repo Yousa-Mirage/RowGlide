@@ -7,7 +7,7 @@ use rowglide_core::{Backend, CacheLimits, Cancellation, MockBackend, Preview, Qu
 use std::sync::Arc;
 
 /// Open a production workspace with deterministic retained mock rows and no pending query.
-fn fixture(
+pub(super) fn fixture(
     cx: &mut TestAppContext,
 ) -> Result<(gpui_kit::AnyWindowHandle, Entity<Workspace>), Box<dyn std::error::Error>> {
     let store = ResultStore::new(CacheLimits::default())?;
@@ -201,7 +201,7 @@ fn tab_group_and_toolbar_focus(cx: &mut TestAppContext) {
             window.press("tab", cx);
             assert!(view.read(cx).open_focus.is_focused(window));
             window.press("tab", cx);
-            assert!(view.read(cx).search.focus_handle(cx).is_focused(window));
+            assert_eq!(window.find("filters-toggle").focused(), Some(true));
             window.press("tab", cx);
             assert!(view.read(cx).limit.focus_handle(cx).is_focused(window));
             window.press("tab", cx);

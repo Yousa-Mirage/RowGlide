@@ -31,6 +31,8 @@ pub(crate) struct SortRequested(pub(crate) Option<Sort>);
 /// The delegate exposes rows, columns and visible-cell summaries to the virtualized
 /// table. Cache misses enqueue bounded background reads without doing file I/O here.
 pub(crate) struct Grid {
+    /// Context-specific explanation for an empty successful Browse page.
+    pub(crate) empty_label: SharedString,
     /// First-batch or manually adjusted widths; None until sizing completes for this session.
     pub(crate) widths: Option<Vec<Pixels>>,
     /// Active typed result, owned here rather than in the tab while displayed.
@@ -257,7 +259,7 @@ impl TableDelegate for Grid {
             .justify_center()
             .text_color(cx.theme().muted_foreground)
             .child(if self.sortable {
-                tr!("table.empty_browse")
+                self.empty_label.clone()
             } else {
                 tr!("table.empty_sql")
             })

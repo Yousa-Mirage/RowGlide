@@ -5,6 +5,7 @@ mod clipboard;
 mod controls;
 mod file_info;
 mod files;
+mod filters;
 mod freshness;
 mod inspector;
 mod memory;
@@ -88,6 +89,10 @@ pub(crate) struct Workspace {
     info_tabs_focus: FocusHandle,
     /// Editable Browse text filter control.
     search: Entity<InputState>,
+    /// Active condition controls, released when switching sessions.
+    filter_editors: Vec<filters::FilterEditor>,
+    /// Monotonic row identity across all tab drafts.
+    next_filter_id: usize,
     /// Editable Browse page-size control.
     limit: Entity<InputState>,
     /// Editable Browse start-offset control.
@@ -171,6 +176,7 @@ impl Workspace {
         let table = cx.new(|cx| {
             TableState::new(
                 Grid {
+                    empty_label: tr!("table.empty_browse"),
                     widths: None,
                     preview: None,
                     sql_result: None,
@@ -263,6 +269,8 @@ impl Workspace {
             info_tabs_scroll: ScrollHandle::new(),
             info_tabs_focus: cx.focus_handle().tab_stop(true),
             search,
+            filter_editors: Vec::new(),
+            next_filter_id: 0,
             limit,
             offset,
             sql,
@@ -340,6 +348,7 @@ impl Workspace {
         });
         self.sql
             .update(cx, |state, cx| state.set_value(tab.sql.clone(), window, cx));
+        self.sync_filter_editors(window, cx);
     }
 }
 
@@ -403,6 +412,29 @@ impl Render for Workspace {
 
         if self.sql_open {
             content = content.child(self.render_sql(cx));
+        } else {
+            if self.active_tab().filters_open {
+                content = content.child(self.render_filters(cx));
+            }
+            let applied = self.applied_filters_label();
+            if !applied.is_empty() {
+                content = content.child(
+                    div()
+                        .px_5()
+                        .py_1()
+                        .text_xs()
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .id("applied-filters")
+                        .tooltip({
+                            let applied = applied.clone();
+                            move |window, cx| {
+                                component::tooltip::Tooltip::new(applied.clone()).build(window, cx)
+                            }
+                        })
+                        .child(applied),
+                );
+            }
         }
 
         // The table fills the remaining space beside the optional inspector.
