@@ -21,7 +21,7 @@ rowglide-app -> rowglide-ui -> rowglide-core
 rowglide-app ----------------> rowglide-core
 ```
 
-- `app` 是可执行 crate，通过 `rowglide_ui::run(backend, results)` 启动界面；具体引擎的选择和构造仅在此进行。
+- `app` 是可执行 crate，解析启动文件参数并通过 `rowglide_ui::run(backend, results, files)` 启动界面；具体引擎的选择和构造仅在此进行。UI 复用后台文件打开流程处理启动路径，不在 app 同步读取文件。
 - `ui` 是库 crate，只公开启动函数；Workspace、表格和交互模块保持私有。组件通过 `core::Backend` 接口工作，不直接调用 DuckDB / Mock 实现。
 - `core` 不依赖 app、UI 或 GPUI，不持有 GUI 对象。`model` 保存共享数据模型，`backend` 保存接口、取消与错误，`pagination` 保存分页规则，`parquet` 保存文件概要与详情分页契约，`duckdb` / `mock` 保存具体实现。
 - `duckdb` 内部的连接、SQL 构造、传输模块保持私有，内部协作使用最小可见性。对外通过 core 根模块重导出稳定类型与接口。

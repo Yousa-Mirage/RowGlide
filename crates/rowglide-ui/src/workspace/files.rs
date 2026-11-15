@@ -1,4 +1,4 @@
-//! Native file selection and background schema inspection.
+//! Native file selection, startup paths and shared background schema inspection.
 
 use crate::i18n::{tr, tr_string};
 
@@ -6,6 +6,7 @@ use super::{Workspace, state::TabState};
 use gpui_kit::component::{Sizable, button::Button};
 use gpui_kit::*;
 use rowglide_core::Cancellation;
+use std::path::PathBuf;
 
 impl Workspace {
     /// Close one source tab, cancelling active work and releasing its retained results.
@@ -79,12 +80,9 @@ impl Workspace {
             .on_click(cx.listener(|this, _, window, cx| this.open_files(window, cx)))
     }
 
-    /// Choose local files, inspect them in background work and activate the last opened tab.
-    ///
-    /// A new invocation cancels the previous inspection token. Successful duplicate
-    /// sources reuse their tabs; failures are collected into the status message.
-    /// Cancelling the picker leaves the workspace unchanged. Tab switches save the
-    /// current session and cancel its query through the normal session lifecycle.
+    /// Choose local files and pass accepted paths to the shared background opener.
+    /// Opening a picker cancels earlier inspection; cancelled or superseded pickers
+    /// do not change tabs. Picker failures are displayed only for the current request.
     fn open_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.opening_cancel.cancel();
         self.opening_cancel = Cancellation::default();
@@ -95,9 +93,12 @@ impl Workspace {
             multiple: true,
             prompt: Some(tr!("files.prompt")),
         });
-        let backend = self.backend.clone();
         cx.spawn_in(window, async move |this, cx| {
-            let paths = match paths.await {
+            let selected = paths.await;
+            if cancel.check().is_err() {
+                return;
+            }
+            let paths = match selected {
                 Ok(Ok(Some(paths))) => paths,
                 Ok(Ok(None)) => return,
                 error => {
@@ -109,12 +110,37 @@ impl Workspace {
                     return;
                 }
             };
-            let _ = this.update(cx, |this, cx| {
-                if this.tabs.is_empty() {
-                    this.status = tr_string!("files.inspecting");
-                }
-                cx.notify();
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.open_paths(paths, window, cx);
             });
+        })
+        .detach();
+    }
+
+    /// Inspect picker or startup paths off the GUI thread, then activate the last success.
+    ///
+    /// Empty input is a no-op. New work cancels previous inspection and ignores stale
+    /// completion. Canonical duplicate sources reuse tabs; per-file failures are
+    /// collected for display without preventing other files from opening. Activation
+    /// saves the current session and uses its normal query-cancellation lifecycle.
+    pub(super) fn open_paths(
+        &mut self,
+        paths: Vec<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if paths.is_empty() {
+            return;
+        }
+        self.opening_cancel.cancel();
+        self.opening_cancel = Cancellation::default();
+        let cancel = self.opening_cancel.clone();
+        let backend = self.backend.clone();
+        if self.tabs.is_empty() {
+            self.status = tr_string!("files.inspecting");
+        }
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
             let worker_cancel = cancel.clone();
             let results = cx
                 .background_executor()

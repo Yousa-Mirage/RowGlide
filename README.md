@@ -34,6 +34,23 @@ C++ Redistributable for x64. Cross-platform startup still needs manual validatio
 cargo run -p rowglide-app --bin rowglide
 ```
 
+Pass file paths to open them in tabs at startup:
+
+```sh
+rowglide "data/example.parquet" "data/another file.pq"
+rowglide -- -starts-with-a-hyphen.parquet
+cargo run -p rowglide-app --bin rowglide -- "data/example.parquet"
+```
+
+With no paths, the usual empty window opens. Paths are inspected in the background;
+duplicates reuse tabs, the last successfully opened file becomes active, and file
+errors are shown in the UI. `--help` and `--version` exit without starting the GUI.
+Startup arguments must be valid UTF-8; invalid encoding is reported without
+replacing filename characters or opening any files.
+On Windows, the executable is `rowglide.exe`; selecting it through **Open with**
+can now pass a file path to the application. Each launch creates its own instance;
+this does not register file associations or forward files to an existing window.
+
 macOS development bundle (requires Rust and Xcode command-line tools):
 
 ```sh
@@ -157,7 +174,9 @@ tests but is no longer the application's default.
 
 Dependencies flow from app to UI/core, and from UI to core. Core never depends
 on app or GUI crates. App injects a concrete backend and shared result store through
-`rowglide_ui::run(backend, results)`; UI consumes the shared contracts.
+`rowglide_ui::run(backend, results, files)`; UI consumes the shared contracts and
+opens startup paths through the same background flow as its file picker. Only app
+depends on argh, using `#[derive(FromArgs)]` with only the help feature enabled.
 
 ## Code layout
 

@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+argh.workspace = true
 rowglide-core.workspace = true
 rowglide-ui.workspace = true
 sysinfo.workspace = true

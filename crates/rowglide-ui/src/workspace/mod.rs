@@ -123,9 +123,11 @@ impl Workspace {
     /// Browse page when available. Sorting resets the applied offset; double-clicking a cell
     /// retains the Arrow array needed by the inspector. Empty registries start in the
     /// file-opening view. File inspection and query execution use background work.
+    /// Nonempty startup paths enter the shared file-opening flow after controls exist.
     pub(crate) fn new(
         backend: Arc<dyn Backend>,
         results: Arc<rowglide_core::ResultStore>,
+        files: Vec<std::path::PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -254,6 +256,7 @@ impl Workspace {
             this.sync_controls_from_tab(window, cx);
             this.run(window, cx);
         }
+        this.open_paths(files, window, cx);
         this
     }
 
