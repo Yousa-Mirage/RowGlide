@@ -6,7 +6,7 @@
 
 Rowglide 是使用 Rust、GPUI 和 gpui-kit 构建的桌面 Parquet / CSV 查看器。核心体验是快速浏览表格、展开嵌套单元格、按列排序、筛选和执行基础 SQL。
 
-开发路线与阶段验收见 [dev.md](dev.md)。已接入 DuckDB 真实后端，模拟后端保留用于测试。不要引入第二个真实查询引擎。
+开发路线与阶段验收保存在本地 `dev.md`（已在 `.gitignore` 中忽略，不纳入版本管理）。已接入 DuckDB 真实后端，模拟后端保留用于测试。不要引入第二个真实查询引擎。
 
 ## Workspace 与依赖边界
 
@@ -56,6 +56,7 @@ rowglide-app ----------------> rowglide-core
 - 不使用 `git add`、`git commit`、`git checkout`、`git reset` 或 `git stash` 管理工作区。
 - 不擅自执行 `jj abandon`、`jj restore`、历史重写或远端推送；尤其不得覆盖或丢弃用户已有修改。
 - 默认不创建 bookmark、不推送；确有发布或协作需求时遵循用户授权。
+- `dev.md` 是本地开发记录，不纳入版本管理；不要将其加入版本控制，也不要把版本管理流程依赖在它的提交上。
 - 文档和实现保持小步、可审阅的变更，描述说明实际目的，避免夹带无关重构。
 
 ## 验证与交付
@@ -64,7 +65,7 @@ rowglide-app ----------------> rowglide-core
 - 对取消、过期结果、空值排序、嵌套路径和缓存边界等行为编写有价值的测试；纯布局调整优先实际运行检查。
 - UI 验证覆盖空数据、加载、错误、取消、宽表、长文本和嵌套数据。自动检查通过不等于视觉验收通过。
 - 未运行的检查必须明确说明，不能报告为通过。
-- 改变架构、阶段范围或已确认选择时同步更新 `dev.md`。未经用户要求，不扩大到数据编辑、云端服务或完整数据库管理功能。
+- 改变架构、阶段范围或已确认选择时同步更新本地 `dev.md`（不纳入版本管理）。未经用户要求，不扩大到数据编辑、云端服务或完整数据库管理功能。
 
 ## 代码文档
 
@@ -77,7 +78,8 @@ rowglide-app ----------------> rowglide-core
 
 ## 开发命令与严格检查
 
-- 使用 `just dev` 启动开发程序，`just test` 运行测试，`just lint` 执行 Clippy，`just ci` 执行完整本地检查；`just` 列出所有命令。
+- 使用 `just dev` 启动开发程序，`just test` 运行测试，`just lint` 执行格式化与 Clippy，`just document` 生成文档；`just` 列出所有命令。`just lint` 会先执行 `cargo fmt --all` 改写格式，不是只读检查。
+- 完整检查直接运行 `cargo fmt --all -- --check`、`cargo check --workspace`、`cargo test --workspace` 和 `cargo clippy --workspace --all-targets -- -D warnings`。
 - 项目代码和测试均禁止调用 `.unwrap()` 与 `.expect()`。通过 workspace Clippy lints 强制执行，各 crate 必须继承 `[lints] workspace = true`，不得用局部 allow 绕过。
 - Clippy 使用 `--workspace --all-targets -- -D warnings`，所有警告视为错误。可恢复错误通过 Result 传播或明确处理，不能只将 unwrap / expect 改写为 panic。
 - 共享错误使用 `thiserror` 定义；通过 `#[from]` / `#[source]` 保留底层原因，优先用 `?` 传播。不要提前把可拥有的底层错误转成字符串；UI 状态展示可格式化为文本。取消始终使用独立的 `QueryError::Cancelled`。 下层操作默认通过 `?` 传播；仅在 UI 展示、任务结束、取消归一化或资源清理边界显式处理，不为纯转发增加嵌套 match。

@@ -168,7 +168,7 @@ tests but is no longer the application's default.
 
 ## Workspace
 
-- `rowglide-app`: executable entry point; selects and constructs the backend.
+- `rowglide-app`: executable entry point; parses startup paths and selects and constructs the backend.
 - `rowglide-ui`: UI library; GPUI startup, window layout and interaction state.
 - `rowglide-core`: shared models, backend contracts, pagination and engine implementations.
 
@@ -180,7 +180,9 @@ depends on argh, using `#[derive(FromArgs)]` with only the help feature enabled.
 
 ## Code layout
 
-`rowglide-app/src/main.rs` is the executable composition root.
+`rowglide-app/src/main.rs` is the executable composition root. `arguments.rs`
+parses startup paths without filesystem access, and `config.rs` validates cache
+budgets and environment overrides.
 
 `rowglide-core/src` groups the domain and backend responsibilities:
 
@@ -188,10 +190,12 @@ depends on argh, using `#[derive(FromArgs)]` with only the help feature enabled.
 - `model.rs`: source metadata, query descriptions and retained Arrow results.
 - `backend.rs`: backend/cursor interfaces, cancellation and shared errors.
 - `pagination.rs`: validated Browse ranges and bounded page collection.
+- `parquet.rs`: Parquet summary/detail contracts.
 - `session.rs`: cancellable, capacity-one query events and background cursor cleanup.
 - `result/`: shared memory-first result storage, incremental IPC spill and asynchronous rereads.
 - `temporary.rs`: leased scratch directories, background deletion and crash recovery.
-- `duckdb/`: private file registry, SQL construction and Arrow worker transport.
+- `clipboard.rs`: bounded, cancellable Arrow value serialization.
+- `duckdb/`: private file registry, SQL construction, Arrow worker transport and Parquet details.
 - `mock.rs`: deterministic fixture backend and its behavior tests.
 
 `rowglide-ui/src` encapsulates the native presentation:
@@ -201,11 +205,15 @@ depends on argh, using `#[derive(FromArgs)]` with only the help feature enabled.
 - `workspace/controls.rs`: file tabs, browse toolbar, SQL editor, and status bar.
 - `workspace/query.rs`: query execution, cancellation, and session switching.
 - `workspace/sql.rs`: streamed SQL progress, cache notifications and terminal status.
-- `workspace/files.rs`: native file selection and background schema inspection.
+- `workspace/files.rs`: native file picker, startup paths and background schema inspection.
 - `workspace/state.rs`: per-file browse/SQL state and bounded result cache.
 - `workspace/inspector.rs`: selected-cell panel and nested-value tree.
-- `table.rs`: virtualized table delegate and sort events.
+- `workspace/file_info/`: Parquet detail panel and metadata table.
+- `clipboard.rs` and `workspace/clipboard.rs`: copy targets/menus and independent copy task.
+- `workspace/memory.rs` and `workspace/sizing.rs`: RSS sampling and first-batch column sizing.
+- `table.rs` and `table/sizing.rs`: virtualized table delegate and column measurement.
 - `cells.rs`: Arrow value summaries and nested-value access.
+- `i18n.rs`: system language selection and translation boundaries.
 
 Workspace owns shared GUI controls and the active task. Each `TabState` retains
 browse inputs, SQL drafts, mode, results and inspector state. Switching a tab or
@@ -214,8 +222,9 @@ filters and column sorting. Up to three inactive results are retained alongside
 the active result. Browse pages retain at most 16 MiB; SQL results use the per-result
 cache budgets above. These are not global process quotas. Eviction releases result
 buffers and temporary files while keeping inputs;
-use **Reload result** to rerun the last applied query. Scroll positions, column
-widths and editor undo history are not yet saved per tab.
+use **Reload result** to rerun the last applied query. Column widths are saved
+independently for each tab's Browse and SQL session; scroll positions and editor
+undo history are not yet saved per tab.
 Table rendering and cell helpers remain independent of workspace coordination.
 
 Core uses `thiserror` for `QueryError`. Arrow, I/O, DuckDB and SQL parsing
@@ -243,16 +252,22 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-See [dev.md](dev.md) for progress, known limitations and the next stages. Version management uses **jj**; each independent modification is its own change.
+Version management uses **jj**; each independent modification is its own change.
+Local development notes are intentionally not version-controlled.
 
 
 ## Just commands
 
-Run `just` to list commands: `just dev`, `just check`, `just test`, `just fmt`,
-`just fmt-check`, `just lint`, `just ci`, and `just bundle-macos`.
-`just ci` runs formatting, compilation, tests and Clippy. Workspace Clippy rules
-ban `unwrap()` and `expect()` in both application and test code; `just lint`
-treats every Clippy warning as an error.
+Run `just` to list the current recipes. `just dev` starts the application,
+`just release` runs the release build, `just test` runs `cargo test --all`,
+`just lint` (aliases `check` and `fmt`) formats the workspace and runs strict
+Clippy, `just document` (alias `doc`) builds public documentation, and
+`just bundle-macos` (alias `mac`) creates the local macOS bundle.
+
+`just lint` rewrites formatting with `cargo fmt --all`; it is not a check-only
+target. For a non-mutating validation, use the cargo commands under
+[Checks](#checks). Workspace Clippy rules ban `unwrap()` and `expect()` in both
+application and test code.
 
 ## Build configuration
 
