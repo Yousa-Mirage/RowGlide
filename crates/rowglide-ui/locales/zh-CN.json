@@ -1,0 +1,167 @@
+{
+  "_version": 1,
+  "common": {
+    "ready": "就绪",
+    "loading": "加载中…",
+    "unavailable": "不可用",
+    "apply": "应用",
+    "reset": "重置",
+    "cancel": "取消",
+    "previous": "上一页",
+    "next": "下一页",
+    "browse": "浏览",
+    "close": "关闭",
+    "retry": "重试"
+  },
+  "filter": {
+    "placeholder": "筛选文本列…"
+  },
+  "files": {
+    "empty": "打开 Parquet 或 CSV 文件",
+    "open": "打开文件…",
+    "prompt": "打开 CSV 或 Parquet 文件",
+    "inspecting": "正在读取文件信息…",
+    "close": "关闭 %{name}"
+  },
+  "browse": {
+    "limit": "每页行数",
+    "offset": "偏移量",
+    "invalid": "每页行数必须为正整数；偏移量必须为非负整数",
+    "empty": "0 行 · 偏移量 %{offset}",
+    "range": "第 %{start}–%{end} 行 · %{rows} 行%{ending}",
+    "end": " · 已到末尾"
+  },
+  "info": {
+    "hide": "隐藏详情",
+    "open": "文件详情",
+    "tooltip": "Parquet 源文件属性与页脚元数据",
+    "title": "Parquet 文件详情",
+    "overview": "概览",
+    "schema": "结构",
+    "row_groups": "行组",
+    "metadata": "元数据",
+    "schema_hint": "已隐藏根节点；嵌套组按原始顺序保留。子节点数表示嵌套关系。",
+    "groups_hint": "每行对应一个列块。null 表示未记录；请留意最小值和最大值的精确性标记。",
+    "metadata_hint": "保留原始键值字节。有效 UTF-8 显示为文本，其他字节显示为 0x 十六进制。",
+    "loading": "正在加载元数据…",
+    "wait": "可能需要等待当前数据查询完成。",
+    "preview": "选中值 · 预览",
+    "copy": "复制完整值",
+    "empty": "0 条记录",
+    "format": "格式",
+    "size": "文件大小",
+    "rows": "行数",
+    "columns": "列数",
+    "version": "格式版本",
+    "creator": "创建工具",
+    "unknown": "未知",
+    "note": "此处为打开文件时读取的源文件信息。筛选和 SQL 不会改变这些计数。文件打开期间请勿修改。各列块的压缩方式和统计信息位于“行组”中。",
+    "no_entries": "没有元数据记录",
+    "cell_missing": "元数据单元格已不可用",
+    "entries": "记录 %{start}–%{end}",
+    "fields": "%{count} 个顶层字段",
+    "source_counts": "源文件 %{rows} 行 · %{columns} 列",
+    "not_recorded": "未记录"
+  },
+  "sql": {
+    "run": "执行查询",
+    "help": "使用 SELECT 或 WITH 查询 current_file。加载所有返回行；点击“取消”可停止执行。",
+    "loading": "已加载 %{rows} 行 · 加载中…",
+    "complete": "%{rows} 行 · 已完成",
+    "cancelled": "已加载 %{rows} 行 · 已取消 · 部分结果",
+    "failed": "已加载 %{rows} 行 · 部分结果 · %{error}",
+    "executing": "正在执行 SQL…"
+  },
+  "query": {
+    "reload": "重新加载结果",
+    "loading": "正在加载数据…",
+    "cancelled": "已取消 · 执行查询以加载数据",
+    "released": "结果已释放 · 再次执行以重新加载"
+  },
+  "inspector": {
+    "close": "关闭单元格查看器"
+  },
+  "copy": {
+    "unavailable": "要复制的列不可用",
+    "value": "复制值",
+    "json": "复制为 JSON",
+    "loading": "复制中…",
+    "timeout": "从 SQL 缓存读取单元格超时，请重试复制",
+    "success": "已复制单元格",
+    "failed": "复制失败：%{error}"
+  },
+  "table": {
+    "empty_browse": "没有可显示的行 · 请尝试其他筛选条件",
+    "empty_sql": "没有可显示的 SQL 结果 · 请执行查询"
+  },
+  "errors": {
+    "close_file": "无法关闭文件：%{error}",
+    "picker": "无法打开文件选择器：%{error}",
+    "memory": "无法初始化内存监控：%{error}",
+    "cancelled": "查询已取消",
+    "arrow": "Arrow 错误：%{error}",
+    "io": "I/O 错误：%{error}",
+    "duckdb": "DuckDB 错误：%{error}",
+    "sql": "SQL 错误：%{error}",
+    "cache": "结果缓存错误：%{error}",
+    "cache_read": "无法读取缓存结果：%{error}",
+    "open_window": "无法打开窗口：%{error}"
+  },
+  "memory": {
+    "gib": "内存 %{value} GiB",
+    "mib": "内存 %{value} MiB",
+    "unknown": "内存 —"
+  },
+  "cell": {
+    "items": "[ ]  %{count} 项",
+    "entries": "{ }  %{count} 项",
+    "fields": "{ }  %{count} 个字段"
+  },
+  "types": {
+    "text": "文本",
+    "integer": "整数",
+    "decimal": "小数",
+    "boolean": "布尔",
+    "list": "列表",
+    "map": "映射",
+    "date": "日期",
+    "timestamp": "时间戳",
+    "object": "对象",
+    "value": "值"
+  },
+  "metadata": {
+    "node": "节点",
+    "name": "名称",
+    "physical_type": "物理类型",
+    "repetition_type": "重复类型",
+    "num_children": "子节点数",
+    "logical_type": "逻辑类型",
+    "converted_type": "转换类型",
+    "duckdb_type": "DuckDB 类型",
+    "type_length": "类型长度",
+    "precision": "精度",
+    "scale": "小数位数",
+    "field_id": "字段 ID",
+    "row_group_id": "行组 ID",
+    "path_in_schema": "结构路径",
+    "column_id": "列 ID",
+    "row_group_num_rows": "行组行数",
+    "row_group_num_columns": "行组列数",
+    "compression": "压缩方式",
+    "encodings": "编码",
+    "total_compressed_size": "压缩后大小",
+    "total_uncompressed_size": "未压缩大小",
+    "num_values": "值数量",
+    "stats_min_value": "最小值",
+    "stats_max_value": "最大值",
+    "min_is_exact": "最小值精确",
+    "max_is_exact": "最大值精确",
+    "stats_null_count": "空值数",
+    "stats_distinct_count": "不同值数",
+    "data_page_offset": "数据页偏移量",
+    "dictionary_page_offset": "字典页偏移量",
+    "entry": "条目",
+    "key": "键",
+    "value": "值"
+  }
+}

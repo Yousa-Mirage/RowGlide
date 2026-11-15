@@ -11,6 +11,8 @@ mod sizing;
 mod sql;
 mod state;
 
+use crate::i18n::tr;
+
 use state::{TabMode, TabState};
 
 use crate::table::{Grid, GridEvents, SortRequested};
@@ -147,7 +149,8 @@ impl Workspace {
             .col_movable(false)
         });
 
-        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Filter text columns…"));
+        let search =
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr!("filter.placeholder")));
         let limit = cx.new(|cx| {
             InputState::new(window, cx).default_value(BrowsePage::default().limit().to_string())
         });
@@ -235,7 +238,7 @@ impl Workspace {
             opening_cancel: Cancellation::default(),
             generation: 0,
             busy: false,
-            status: "Ready".into(),
+            status: tr!("common.ready"),
             error: false,
             sql_open: false,
             file_info: file_info::InfoView::new(window, cx),
@@ -325,7 +328,7 @@ impl Render for Workspace {
                         .items_center()
                         .justify_center()
                         .gap_3()
-                        .child("Open a Parquet or CSV file")
+                        .child(tr!("files.empty"))
                         .child(self.render_open_button(cx))
                         .child(div().text_sm().child(self.status.clone())),
                 )

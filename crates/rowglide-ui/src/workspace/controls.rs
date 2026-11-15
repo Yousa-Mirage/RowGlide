@@ -1,5 +1,7 @@
 //! File navigation, browse controls, SQL editor, and status bar.
 
+use crate::i18n::tr;
+
 use super::{TabMode, Workspace};
 use gpui_kit::component::{
     ActiveTheme, Disableable, IconName, Sizable,
@@ -27,7 +29,7 @@ impl Workspace {
                         .xsmall()
                         .ghost()
                         .icon(IconName::Close)
-                        .tooltip(format!("Close {}", tab.source.name))
+                        .tooltip(tr!("files.close", name = tab.source.name))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             this.close_tab(source, window, cx);
@@ -63,14 +65,14 @@ impl Workspace {
                     .max_w(px(320.))
                     .child(Input::new(&self.search).small().disabled(sql_mode)),
             )
-            .child(div().text_xs().child("Limit"))
+            .child(div().text_xs().child(tr!("browse.limit")))
             .child(
                 div()
                     .w(px(80.))
                     .flex_shrink_0()
                     .child(Input::new(&self.limit).small().disabled(sql_mode)),
             )
-            .child(div().text_xs().child("Offset"))
+            .child(div().text_xs().child(tr!("browse.offset")))
             .child(
                 div()
                     .w(px(80.))
@@ -80,7 +82,7 @@ impl Workspace {
             .child(
                 Button::new("filter")
                     .small()
-                    .label("Apply")
+                    .label(tr!("common.apply"))
                     .disabled(sql_mode)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.apply_filter(window, cx);
@@ -89,7 +91,7 @@ impl Workspace {
             .child(
                 Button::new("reset")
                     .small()
-                    .label("Reset")
+                    .label(tr!("common.reset"))
                     .disabled(sql_mode)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.query = Query {
@@ -110,18 +112,22 @@ impl Workspace {
                     Button::new("file-info-toggle")
                         .small()
                         .label(if self.active_tab().info.open {
-                            "Hide info"
+                            tr!("info.hide")
                         } else {
-                            "File info"
+                            tr!("info.open")
                         })
-                        .tooltip("Parquet source properties and footer metadata")
+                        .tooltip(tr!("info.tooltip"))
                         .on_click(cx.listener(|this, _, _, cx| this.toggle_file_info(cx))),
                 )
             })
             .child(
                 Button::new("sql-toggle")
                     .small()
-                    .label(if self.sql_open { "Browse" } else { "SQL" })
+                    .label(if self.sql_open {
+                        tr!("common.browse")
+                    } else {
+                        "SQL".to_string()
+                    })
                     .on_click(cx.listener(|this, _, window, cx| this.switch_mode(window, cx))),
             )
     }
@@ -152,7 +158,7 @@ impl Workspace {
                         Button::new("run")
                             .small()
                             .primary()
-                            .label("Run query")
+                            .label(tr!("sql.run"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.run_sql(window, cx);
                             })),
@@ -164,9 +170,7 @@ impl Workspace {
                     .mt_2()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child(
-                        "Query current_file with SELECT or WITH. All returned rows are loaded; Cancel stops execution.",
-                    ),
+                    .child(tr!("sql.help")),
             )
     }
 
@@ -200,7 +204,11 @@ impl Workspace {
                     })
                     .child(format!(
                         "{} · {}",
-                        if self.sql_open { "SQL" } else { "Browse" },
+                        if self.sql_open {
+                            "SQL".to_string()
+                        } else {
+                            tr!("common.browse")
+                        },
                         self.status
                     )),
             )
@@ -223,7 +231,7 @@ impl Workspace {
                         Button::new("reload-result")
                             .small()
                             .ghost()
-                            .label("Reload result")
+                            .label(tr!("query.reload"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.query = this.active_tab().active_query();
                                 this.run(window, cx);
@@ -236,7 +244,7 @@ impl Workspace {
                     Button::new("cancel")
                         .small()
                         .ghost()
-                        .label("Cancel")
+                        .label(tr!("common.cancel"))
                         .on_click(cx.listener(|this, _, _, cx| this.cancel(cx))),
                 )
             })
@@ -246,7 +254,7 @@ impl Workspace {
                     Button::new("previous-page")
                         .small()
                         .ghost()
-                        .label("Previous")
+                        .label(tr!("common.previous"))
                         .disabled(!self.can_turn_page(false, cx))
                         .on_click(
                             cx.listener(|this, _, window, cx| this.turn_page(false, window, cx)),
@@ -256,7 +264,7 @@ impl Workspace {
                     Button::new("next-page")
                         .small()
                         .ghost()
-                        .label("Next")
+                        .label(tr!("common.next"))
                         .disabled(!self.can_turn_page(true, cx))
                         .on_click(
                             cx.listener(|this, _, window, cx| this.turn_page(true, window, cx)),

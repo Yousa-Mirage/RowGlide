@@ -1,5 +1,7 @@
 //! Display helpers that preserve the underlying Arrow values.
 
+use crate::i18n::tr;
+
 use arrow_array::{
     Array, ArrayRef, BooleanArray, FixedSizeListArray, Float64Array, Int64Array, LargeListArray,
     LargeStringArray, ListArray, MapArray, StringArray, StringViewArray, StructArray,
@@ -32,13 +34,13 @@ pub(crate) fn summary(array: &ArrayRef, row: usize) -> String {
         return a.value(row).chars().take(240).collect();
     }
     if let Some(a) = array.as_any().downcast_ref::<LargeListArray>() {
-        return format!("[ ]  {} items", a.value_length(row));
+        return tr!("cell.items", count = a.value_length(row));
     }
     if let Some(a) = array.as_any().downcast_ref::<FixedSizeListArray>() {
-        return format!("[ ]  {} items", a.value_length());
+        return tr!("cell.items", count = a.value_length());
     }
     if let Some(a) = array.as_any().downcast_ref::<MapArray>() {
-        return format!("{{ }}  {} entries", a.value_length(row));
+        return tr!("cell.entries", count = a.value_length(row));
     }
     if let Some(a) = array.as_any().downcast_ref::<Int64Array>() {
         return a.value(row).to_string();
@@ -53,11 +55,11 @@ pub(crate) fn summary(array: &ArrayRef, row: usize) -> String {
     }
 
     if let Some(a) = array.as_any().downcast_ref::<ListArray>() {
-        return format!("[ ]  {} items", a.value_length(row));
+        return tr!("cell.items", count = a.value_length(row));
     }
 
     if let Some(a) = array.as_any().downcast_ref::<StructArray>() {
-        return format!("{{ }}  {} fields", a.num_columns());
+        return tr!("cell.fields", count = a.num_columns());
     }
 
     arrow_cast::display::array_value_to_string(array.as_ref(), row)
@@ -116,11 +118,11 @@ pub(crate) fn children(array: &ArrayRef, row: usize) -> Vec<(String, ArrayRef, u
 ///
 /// Related numeric and text representations share labels. Unlisted types use
 /// `Value`; the original Arrow schema still retains all type details.
-pub(crate) fn type_label(data_type: &arrow_schema::DataType) -> &'static str {
+pub(crate) fn type_label(data_type: &arrow_schema::DataType) -> String {
     use arrow_schema::DataType;
 
     match data_type {
-        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => "Text",
+        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => tr!("types.text"),
         DataType::Int8
         | DataType::Int16
         | DataType::Int32
@@ -128,18 +130,20 @@ pub(crate) fn type_label(data_type: &arrow_schema::DataType) -> &'static str {
         | DataType::UInt8
         | DataType::UInt16
         | DataType::UInt32
-        | DataType::UInt64 => "Integer",
+        | DataType::UInt64 => tr!("types.integer"),
         DataType::Float16
         | DataType::Float32
         | DataType::Float64
         | DataType::Decimal128(_, _)
-        | DataType::Decimal256(_, _) => "Decimal",
-        DataType::Boolean => "Boolean",
-        DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => "List",
-        DataType::Map(_, _) => "Map",
-        DataType::Date32 | DataType::Date64 => "Date",
-        DataType::Timestamp(_, _) => "Timestamp",
-        DataType::Struct(_) => "Object",
-        _ => "Value",
+        | DataType::Decimal256(_, _) => tr!("types.decimal"),
+        DataType::Boolean => tr!("types.boolean"),
+        DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => {
+            tr!("types.list")
+        }
+        DataType::Map(_, _) => tr!("types.map"),
+        DataType::Date32 | DataType::Date64 => tr!("types.date"),
+        DataType::Timestamp(_, _) => tr!("types.timestamp"),
+        DataType::Struct(_) => tr!("types.object"),
+        _ => tr!("types.value"),
     }
 }

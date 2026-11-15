@@ -1,5 +1,7 @@
 //! Per-file browse and SQL sessions with bounded result retention.
 
+use crate::i18n::tr;
+
 use arrow_array::ArrayRef;
 use rowglide_core::{BrowsePage, Preview, Query, QueryError, QueryResult, Source};
 use std::{collections::HashSet, sync::Arc};
@@ -65,9 +67,9 @@ impl BrowseDraft {
             if text.trim().is_empty() {
                 Ok(default)
             } else {
-                text.trim().parse::<usize>().map_err(|_| QueryError::Invalid(
-                    "Limit must be a positive whole number; Offset must be a non-negative whole number".into(),
-                ))
+                text.trim()
+                    .parse::<usize>()
+                    .map_err(|_| QueryError::Invalid(tr!("browse.invalid")))
             }
         };
         BrowsePage::new(
@@ -110,18 +112,18 @@ impl PageSummary {
     /// End of results only when lookahead found no further row.
     pub(super) fn label(self) -> String {
         if self.rows == 0 {
-            format!("0 rows · Offset {}", self.range.offset())
+            tr!("browse.empty", offset = self.range.offset())
         } else {
-            format!(
-                "Rows {}–{} · {} rows{}",
-                self.range.offset() + 1,
-                self.range.offset() + self.rows,
-                self.rows,
-                if self.has_next {
-                    ""
+            tr!(
+                "browse.range",
+                start = self.range.offset() + 1,
+                end = self.range.offset() + self.rows,
+                rows = self.rows,
+                ending = if self.has_next {
+                    String::new()
                 } else {
-                    " · End of results"
-                },
+                    tr!("browse.end")
+                }
             )
         }
     }
@@ -252,7 +254,7 @@ impl Default for ResultState {
             preview: None,
             sql_result: None,
             page: None,
-            status: "Ready".into(),
+            status: tr!("common.ready"),
             error: false,
             selected: None,
             expanded: HashSet::new(),
@@ -313,7 +315,7 @@ pub(super) fn trim_cache(tabs: &mut [TabState]) {
         result.page = None;
         result.selected = None;
         result.expanded.clear();
-        result.status = "Result released · run again to reload".into();
+        result.status = tr!("query.released");
         result.error = false;
     }
 }

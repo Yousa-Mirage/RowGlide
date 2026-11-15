@@ -1,5 +1,7 @@
 //! Independent clipboard task lifecycle; query status and execution stay untouched.
 
+use crate::i18n::tr;
+
 use super::Workspace;
 use crate::clipboard::CopyRequested;
 use gpui_kit::*;
@@ -33,7 +35,7 @@ impl Workspace {
         self.clipboard.cancel.cancel();
         self.clipboard.task = None;
         self.clipboard.cancel = Cancellation::default();
-        self.clipboard.message = Some("Copying…".into());
+        self.clipboard.message = Some(tr!("copy.loading"));
         let cancel = self.clipboard.cancel.clone();
         self.clipboard.task = Some(cx.spawn(async move |this, cx| {
             let resolved = tokio::select! {
@@ -41,7 +43,7 @@ impl Workspace {
                 _ = cancel.cancelled() => Err(CopyError::from(rowglide_core::QueryError::Cancelled)),
                 result = request.target.resolve(&cancel) => result,
                 _ = cx.background_executor().timer(Duration::from_secs(30)) => {
-                    Err(CopyError::Invalid("Timed out reading the cell from the SQL cache; retry copying".into()))
+                    Err(CopyError::Invalid(tr!("copy.timeout")))
                 }
             };
             let outcome = match resolved {
@@ -68,9 +70,9 @@ impl Workspace {
                 this.clipboard.message = Some(match outcome {
                     Ok(text) => {
                         cx.write_to_clipboard(ClipboardItem::new_string(text));
-                        "Cell copied".into()
+                        tr!("copy.success")
                     }
-                    Err(error) => format!("Copy failed: {error}"),
+                    Err(error) => tr!("copy.failed", error = error),
                 });
                 cx.notify();
             });

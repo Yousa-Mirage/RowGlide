@@ -1,5 +1,7 @@
 //! Native file selection and background schema inspection.
 
+use crate::i18n::tr;
+
 use super::{Workspace, state::TabState};
 use gpui_kit::component::{Sizable, button::Button};
 use gpui_kit::*;
@@ -15,7 +17,10 @@ impl Workspace {
             return;
         };
         if let Err(error) = self.backend.close(source) {
-            self.status = format!("Cannot close file: {error}");
+            self.status = tr!(
+                "errors.close_file",
+                error = crate::i18n::query_error(&error)
+            );
             self.error = true;
             cx.notify();
             return;
@@ -50,7 +55,7 @@ impl Workspace {
             self.query = Default::default();
             self.sql_open = false;
             self.error = false;
-            self.status = "Ready".into();
+            self.status = tr!("common.ready");
             self.search
                 .update(cx, |state, cx| state.set_value("", window, cx));
             self.limit
@@ -70,7 +75,7 @@ impl Workspace {
     pub(super) fn render_open_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
         Button::new("open-files")
             .small()
-            .label("Open files…")
+            .label(tr!("files.open"))
             .on_click(cx.listener(|this, _, window, cx| this.open_files(window, cx)))
     }
 
@@ -88,7 +93,7 @@ impl Workspace {
             files: true,
             directories: false,
             multiple: true,
-            prompt: Some("Open CSV or Parquet files".into()),
+            prompt: Some(tr!("files.prompt").into()),
         });
         let backend = self.backend.clone();
         cx.spawn_in(window, async move |this, cx| {
@@ -97,7 +102,7 @@ impl Workspace {
                 Ok(Ok(None)) => return,
                 error => {
                     let _ = this.update(cx, |this, cx| {
-                        this.status = format!("Cannot open file picker: {error:?}");
+                        this.status = tr!("errors.picker", error = format!("{error:?}"));
                         this.error = true;
                         cx.notify();
                     });
@@ -106,7 +111,7 @@ impl Workspace {
             };
             let _ = this.update(cx, |this, cx| {
                 if this.tabs.is_empty() {
-                    this.status = "Inspecting files…".into();
+                    this.status = tr!("files.inspecting");
                 }
                 cx.notify();
             });
@@ -148,7 +153,11 @@ impl Workspace {
                             };
                             opened = Some(index);
                         }
-                        Err(error) => errors.push(format!("{}: {error}", path.display())),
+                        Err(error) => errors.push(format!(
+                            "{}: {}",
+                            path.display(),
+                            crate::i18n::query_error(&error)
+                        )),
                     }
                 }
                 if let Some(index) = opened {

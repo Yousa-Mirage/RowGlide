@@ -1,5 +1,7 @@
 //! Selected-cell details and expandable nested values.
 
+use crate::i18n::tr;
+
 use super::{ResizePanel, Workspace};
 use crate::cells;
 use crate::clipboard::{CopyTarget, copy_menu};
@@ -65,7 +67,7 @@ impl Workspace {
                             .small()
                             .ghost()
                             .icon(IconName::Close)
-                            .tooltip("Close cell inspector")
+                            .tooltip(tr!("inspector.close"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.selected = None;
                                 cx.notify();

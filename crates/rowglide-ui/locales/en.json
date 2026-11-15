@@ -1,0 +1,167 @@
+{
+  "_version": 1,
+  "common": {
+    "ready": "Ready",
+    "loading": "Loading…",
+    "unavailable": "Unavailable",
+    "apply": "Apply",
+    "reset": "Reset",
+    "cancel": "Cancel",
+    "previous": "Previous",
+    "next": "Next",
+    "browse": "Browse",
+    "close": "Close",
+    "retry": "Retry"
+  },
+  "filter": {
+    "placeholder": "Filter text columns…"
+  },
+  "files": {
+    "empty": "Open a Parquet or CSV file",
+    "open": "Open files…",
+    "prompt": "Open CSV or Parquet files",
+    "inspecting": "Inspecting files…",
+    "close": "Close %{name}"
+  },
+  "browse": {
+    "limit": "Limit",
+    "offset": "Offset",
+    "invalid": "Limit must be a positive whole number; Offset must be a non-negative whole number",
+    "empty": "0 rows · Offset %{offset}",
+    "range": "Rows %{start}–%{end} · %{rows} rows%{ending}",
+    "end": " · End of results"
+  },
+  "info": {
+    "hide": "Hide info",
+    "open": "File info",
+    "tooltip": "Parquet source properties and footer metadata",
+    "title": "Parquet file info",
+    "overview": "Overview",
+    "schema": "Schema",
+    "row_groups": "Row groups",
+    "metadata": "Metadata",
+    "schema_hint": "Root omitted; nested groups retained in original order. Child counts describe nesting.",
+    "groups_hint": "One row per column chunk. null means not recorded; check min/max exactness flags.",
+    "metadata_hint": "Original key/value bytes. Valid UTF-8 is shown as text; other bytes as 0x hex.",
+    "loading": "Loading metadata…",
+    "wait": "May wait for the current data query.",
+    "preview": "Selected value · preview",
+    "copy": "Copy full value",
+    "empty": "0 entries",
+    "format": "Format",
+    "size": "File size",
+    "rows": "Rows",
+    "columns": "Columns",
+    "version": "Format version",
+    "creator": "Created by",
+    "unknown": "Unknown",
+    "note": "Source facts captured when opened. Filters and SQL do not change these counts. Keep the file unchanged while it is open. Compression and statistics are listed per column chunk under Row groups.",
+    "no_entries": "No metadata entries",
+    "cell_missing": "Metadata cell is no longer available",
+    "entries": "Entries %{start}–%{end}",
+    "fields": "%{count} top-level fields",
+    "source_counts": "Source %{rows} rows · %{columns} columns",
+    "not_recorded": "Not recorded"
+  },
+  "sql": {
+    "run": "Run query",
+    "help": "Query current_file with SELECT or WITH. All returned rows are loaded; Cancel stops execution.",
+    "loading": "%{rows} rows loaded · Loading…",
+    "complete": "%{rows} rows · Complete",
+    "cancelled": "%{rows} rows loaded · Cancelled · Partial result",
+    "failed": "%{rows} rows loaded · Partial result · %{error}",
+    "executing": "Executing SQL…"
+  },
+  "query": {
+    "reload": "Reload result",
+    "loading": "Loading data…",
+    "cancelled": "Cancelled · run a query to load data",
+    "released": "Result released · run again to reload"
+  },
+  "inspector": {
+    "close": "Close cell inspector"
+  },
+  "copy": {
+    "unavailable": "Copy column is unavailable",
+    "value": "Copy value",
+    "json": "Copy as JSON",
+    "loading": "Copying…",
+    "timeout": "Timed out reading the cell from the SQL cache; retry copying",
+    "success": "Cell copied",
+    "failed": "Copy failed: %{error}"
+  },
+  "table": {
+    "empty_browse": "No rows to display · try a different filter",
+    "empty_sql": "No SQL rows to display · run a query"
+  },
+  "errors": {
+    "close_file": "Cannot close file: %{error}",
+    "picker": "Cannot open file picker: %{error}",
+    "memory": "Cannot initialize memory monitoring: %{error}",
+    "cancelled": "Query cancelled",
+    "arrow": "Arrow error: %{error}",
+    "io": "I/O error: %{error}",
+    "duckdb": "DuckDB error: %{error}",
+    "sql": "SQL error: %{error}",
+    "cache": "Result cache error: %{error}",
+    "cache_read": "Cannot read cached result: %{error}",
+    "open_window": "Cannot open window: %{error}"
+  },
+  "memory": {
+    "gib": "Memory %{value} GiB",
+    "mib": "Memory %{value} MiB",
+    "unknown": "Memory —"
+  },
+  "cell": {
+    "items": "[ ]  %{count} items",
+    "entries": "{ }  %{count} entries",
+    "fields": "{ }  %{count} fields"
+  },
+  "types": {
+    "text": "Text",
+    "integer": "Integer",
+    "decimal": "Decimal",
+    "boolean": "Boolean",
+    "list": "List",
+    "map": "Map",
+    "date": "Date",
+    "timestamp": "Timestamp",
+    "object": "Object",
+    "value": "Value"
+  },
+  "metadata": {
+    "node": "node",
+    "name": "name",
+    "physical_type": "physical type",
+    "repetition_type": "repetition type",
+    "num_children": "num children",
+    "logical_type": "logical type",
+    "converted_type": "converted type",
+    "duckdb_type": "duckdb type",
+    "type_length": "type length",
+    "precision": "precision",
+    "scale": "scale",
+    "field_id": "field id",
+    "row_group_id": "row group id",
+    "path_in_schema": "path in schema",
+    "column_id": "column id",
+    "row_group_num_rows": "row group num rows",
+    "row_group_num_columns": "row group num columns",
+    "compression": "compression",
+    "encodings": "encodings",
+    "total_compressed_size": "total compressed size",
+    "total_uncompressed_size": "total uncompressed size",
+    "num_values": "num values",
+    "stats_min_value": "stats min value",
+    "stats_max_value": "stats max value",
+    "min_is_exact": "min is exact",
+    "max_is_exact": "max is exact",
+    "stats_null_count": "stats null count",
+    "stats_distinct_count": "stats distinct count",
+    "data_page_offset": "data page offset",
+    "dictionary_page_offset": "dictionary page offset",
+    "entry": "entry",
+    "key": "key",
+    "value": "value"
+  }
+}

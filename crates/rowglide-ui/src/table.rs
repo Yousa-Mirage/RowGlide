@@ -2,6 +2,8 @@
 
 pub(crate) mod sizing;
 
+use crate::i18n::tr;
+
 use crate::cells;
 use crate::clipboard::{CopyTarget, copy_menu};
 use arrow_array::RecordBatch;
@@ -109,7 +111,7 @@ impl TableDelegate for Grid {
             .as_ref()
             .and_then(|schema| schema.fields().get(index))
         else {
-            return Column::new(format!("unavailable-{index}"), "Unavailable")
+            return Column::new(format!("unavailable-{index}"), tr!("common.unavailable"))
                 .selectable(false)
                 .movable(false);
         };
@@ -190,7 +192,7 @@ impl TableDelegate for Grid {
             .map(|(b, r)| cells::summary(b.column(col), r))
             .unwrap_or_else(|| {
                 if self.sql_result.is_some() {
-                    "Loading…".into()
+                    tr!("common.loading")
                 } else {
                     String::new()
                 }
@@ -246,9 +248,9 @@ impl TableDelegate for Grid {
             .justify_center()
             .text_color(cx.theme().muted_foreground)
             .child(if self.sortable {
-                "No rows to display · try a different filter"
+                tr!("table.empty_browse")
             } else {
-                "No SQL rows to display · run a query"
+                tr!("table.empty_sql")
             })
     }
 }

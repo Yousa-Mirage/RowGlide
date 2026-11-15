@@ -1,5 +1,7 @@
 //! Virtualized footer-detail table and lossless text/hex formatting for selected values.
 
+use crate::i18n::tr;
+
 use arrow_array::{
     Array, ArrayRef, BinaryArray, LargeBinaryArray, LargeStringArray, StringArray, StringViewArray,
 };
@@ -28,7 +30,9 @@ impl MetadataGrid {
             .page
             .as_ref()
             .and_then(|page| page.preview.schema.fields().get(column))
-            .map_or_else(String::new, |field| field.name().replace('_', " "));
+            .map_or_else(String::new, |field| {
+                crate::i18n::metadata_header(field.name())
+            });
         let labels = std::iter::once(header)
             .chain((0..self.rows_count(cx)).map(|row| self.label(row, column)));
         let text_system = WindowTextSystem::new(cx.text_system().clone());
@@ -89,8 +93,11 @@ impl TableDelegate for MetadataGrid {
             .page
             .as_ref()
             .and_then(|page| page.preview.schema.fields().get(index))
-            .map_or("Unavailable", |field| field.name().as_str());
-        Column::new(format!("metadata-{index}"), name.replace('_', " "))
+            .map_or_else(
+                || tr!("common.unavailable"),
+                |field| crate::i18n::metadata_header(field.name()),
+            );
+        Column::new(format!("metadata-{index}"), name)
             .width((self.content_width(index, cx) + px(24.)).clamp(px(64.), px(320.)))
             .min_width(px(64.))
             .max_width(px(640.))
@@ -156,7 +163,7 @@ impl TableDelegate for MetadataGrid {
             .justify_center()
             .text_sm()
             .text_color(cx.theme().muted_foreground)
-            .child("No metadata entries")
+            .child(tr!("info.no_entries"))
     }
 }
 
@@ -169,9 +176,7 @@ pub(super) fn value_text(
     limit: Option<usize>,
 ) -> Result<String, QueryError> {
     if row >= array.len() {
-        return Err(QueryError::Invalid(
-            "Metadata cell is no longer available".into(),
-        ));
+        return Err(QueryError::Invalid(tr!("info.cell_missing")));
     }
     if array.is_null(row) {
         return Ok("null".into());

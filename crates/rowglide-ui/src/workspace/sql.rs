@@ -1,5 +1,7 @@
 //! SQL result lifecycle and coalesced GUI updates; all disk work remains in core.
 
+use crate::i18n::tr;
+
 use super::{Workspace, state::TabMode};
 use gpui_kit::*;
 use rowglide_core::{QueryError, QueryResult, ResultLimits, ResultPhase, ResultSnapshot};
@@ -97,14 +99,14 @@ impl Workspace {
 /// Describe generated rows without implying completeness before a successful terminal event.
 fn status(snapshot: &ResultSnapshot) -> String {
     match &snapshot.phase {
-        ResultPhase::Running if snapshot.schema.is_none() => "Executing SQL…".into(),
-        ResultPhase::Running => format!("{} rows loaded · Loading…", snapshot.rows),
-        ResultPhase::Complete => format!("{} rows · Complete", snapshot.rows),
+        ResultPhase::Running if snapshot.schema.is_none() => tr!("sql.executing"),
+        ResultPhase::Running => tr!("sql.loading", rows = snapshot.rows),
+        ResultPhase::Complete => tr!("sql.complete", rows = snapshot.rows),
         ResultPhase::Cancelled => {
-            format!("{} rows loaded · Cancelled · Partial result", snapshot.rows)
+            tr!("sql.cancelled", rows = snapshot.rows)
         }
         ResultPhase::Failed(error) => {
-            format!("{} rows loaded · Partial result · {error}", snapshot.rows)
+            tr!("sql.failed", rows = snapshot.rows, error = error)
         }
     }
 }

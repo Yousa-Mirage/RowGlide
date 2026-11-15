@@ -1,5 +1,7 @@
 //! Compact file summary and paged metadata presentation beside the data table.
 
+use crate::i18n::tr;
+
 use super::{Workspace, table::limited_text, value_text};
 use crate::workspace::ResizePanel;
 use gpui_kit::component::{
@@ -53,13 +55,13 @@ impl Workspace {
                         div()
                             .text_sm()
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child("Parquet file info"),
+                            .child(tr!("info.title")),
                     )
                     .child(
                         Button::new("close-file-info")
                             .small()
                             .ghost()
-                            .label("Close")
+                            .label(tr!("common.close"))
                             .on_click(cx.listener(|this, _, _, cx| this.close_file_info(cx))),
                     ),
             )
@@ -79,9 +81,14 @@ impl Workspace {
                     .px_3()
                     .selected_index(index)
                     .children(
-                        ["Overview", "Schema", "Row groups", "Metadata"]
-                            .into_iter()
-                            .map(|name| Tab::new().label(name).px_2()),
+                        [
+                            tr!("info.overview"),
+                            tr!("info.schema"),
+                            tr!("info.row_groups"),
+                            tr!("info.metadata"),
+                        ]
+                        .into_iter()
+                        .map(|name| Tab::new().label(name).px_2()),
                     )
                     .on_click(cx.listener(|this, index: &usize, _, cx| {
                         this.select_info_section(*index, cx)
@@ -95,12 +102,12 @@ impl Workspace {
         }
         let hint = match section {
             Some(ParquetSection::Schema) => {
-                "Root omitted; nested groups retained in original order. Child counts describe nesting."
+                tr!("info.schema_hint")
             }
             Some(ParquetSection::RowGroups) => {
-                "One row per column chunk. null means not recorded; check min/max exactness flags."
+                tr!("info.groups_hint")
             }
-            _ => "Original key/value bytes. Valid UTF-8 is shown as text; other bytes as 0x hex.",
+            _ => tr!("info.metadata_hint"),
         };
         panel = panel.child(
             div()
@@ -131,7 +138,7 @@ impl Workspace {
                     .child(
                         Button::new("retry-file-info")
                             .small()
-                            .label("Retry")
+                            .label(tr!("common.retry"))
                             .on_click(cx.listener(|this, _, _, cx| this.refresh_file_info(cx))),
                     ),
             );
@@ -144,12 +151,12 @@ impl Workspace {
                     .items_center()
                     .justify_center()
                     .gap_3()
-                    .child(div().text_sm().child("Loading metadata…"))
+                    .child(div().text_sm().child(tr!("info.loading")))
                     .child(
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child("May wait for the current data query."),
+                            .child(tr!("info.wait")),
                     ),
             );
         } else {
@@ -186,12 +193,12 @@ impl Workspace {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .child(div().text_xs().child("Selected value · preview"))
+                            .child(div().text_xs().child(tr!("info.preview")))
                             .child(
                                 Button::new("copy-metadata-value")
                                     .small()
                                     .ghost()
-                                    .label("Copy full value")
+                                    .label(tr!("info.copy"))
                                     .on_click(
                                         cx.listener(|this, _, _, cx| this.copy_info_value(cx)),
                                     ),
@@ -210,13 +217,13 @@ impl Workspace {
         let offset = self.active_tab().info.offset;
         let rows = grid.page.as_ref().map_or(0, |page| page.preview.rows);
         let label = if grid.loading {
-            "Loading…".into()
+            tr!("common.loading")
         } else if self.file_info.error.is_some() {
-            "Unavailable".into()
+            tr!("common.unavailable")
         } else if rows == 0 {
-            "0 entries".into()
+            tr!("info.empty")
         } else {
-            format!("Entries {}–{}", offset + 1, offset + rows)
+            tr!("info.entries", start = offset + 1, end = offset + rows)
         };
         panel
             .child(
@@ -233,7 +240,7 @@ impl Workspace {
                         Button::new("metadata-previous")
                             .small()
                             .ghost()
-                            .label("Previous")
+                            .label(tr!("common.previous"))
                             .disabled(grid.loading || offset == 0)
                             .on_click(cx.listener(|this, _, _, cx| this.turn_info_page(false, cx))),
                     )
@@ -241,7 +248,7 @@ impl Workspace {
                         Button::new("metadata-next")
                             .small()
                             .ghost()
-                            .label("Next")
+                            .label(tr!("common.next"))
                             .disabled(
                                 grid.loading
                                     || !grid.page.as_ref().is_some_and(|page| page.has_next),
@@ -267,22 +274,25 @@ impl Workspace {
             .gap_4();
         if let Some(summary) = &source.parquet {
             for (label, value) in [
-                ("Format", "Parquet".to_string()),
-                ("File size", format_file_size(summary.file_bytes)),
+                (tr!("info.format"), "Parquet".to_string()),
+                (tr!("info.size"), format_file_size(summary.file_bytes)),
                 (
-                    "Rows",
+                    tr!("info.rows"),
                     source
                         .rows
-                        .map_or("Unknown".into(), |rows| rows.to_string()),
+                        .map_or(tr!("info.unknown"), |rows| rows.to_string()),
                 ),
-                ("Columns", format!("{} top-level fields", summary.columns)),
-                ("Row groups", summary.row_groups.to_string()),
-                ("Format version", summary.format_version.to_string()),
                 (
-                    "Created by",
-                    limited_text(
-                        summary.created_by.as_deref().unwrap_or("Not recorded"),
-                        Some(512),
+                    tr!("info.columns"),
+                    tr!("info.fields", count = summary.columns),
+                ),
+                (tr!("info.row_groups"), summary.row_groups.to_string()),
+                (tr!("info.version"), summary.format_version.to_string()),
+                (
+                    tr!("info.creator"),
+                    summary.created_by.as_deref().map_or_else(
+                        || tr!("info.not_recorded"),
+                        |creator| limited_text(creator, Some(512)),
                     ),
                 ),
             ] {
@@ -302,7 +312,13 @@ impl Workspace {
                 );
             }
         }
-        content.child(div().mt_2().text_xs().text_color(rgb(0x6c7b73)).child("Source facts captured when opened. Filters and SQL do not change these counts. Keep the file unchanged while it is open. Compression and statistics are listed per column chunk under Row groups."))
+        content.child(
+            div()
+                .mt_2()
+                .text_xs()
+                .text_color(rgb(0x6c7b73))
+                .child(tr!("info.note")),
+        )
     }
 }
 

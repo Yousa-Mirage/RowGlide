@@ -1,5 +1,7 @@
 //! Immutable copy targets and menus shared by data cells and detail panels.
 
+use crate::i18n::tr;
+
 use crate::table::GridEvents;
 use arrow_array::ArrayRef;
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
@@ -31,7 +33,7 @@ impl CopyTarget {
                 let array = batch
                     .columns()
                     .get(*col)
-                    .ok_or_else(|| CopyError::Invalid("Copy column is unavailable".into()))?;
+                    .ok_or_else(|| CopyError::Invalid(tr!("copy.unavailable")))?;
                 Ok((array.clone(), local))
             }
         }
@@ -56,8 +58,8 @@ pub(crate) fn copy_menu(
     events: Entity<GridEvents>,
 ) -> PopupMenu {
     for (label, format) in [
-        ("Copy value", CopyFormat::Value),
-        ("Copy as JSON", CopyFormat::Json),
+        (tr!("copy.value"), CopyFormat::Value),
+        (tr!("copy.json"), CopyFormat::Json),
     ] {
         let target = target.clone();
         let events = events.clone();

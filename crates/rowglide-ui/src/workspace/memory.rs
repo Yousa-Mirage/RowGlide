@@ -1,5 +1,7 @@
 //! Whole-process resident memory sampling; no per-tab or disk accounting.
 
+use crate::i18n::tr;
+
 use super::Workspace;
 use gpui_kit::*;
 use std::time::Duration;
@@ -20,7 +22,7 @@ impl Workspace {
             {
                 Ok(system) => system,
                 Err(error) => {
-                    eprintln!("Cannot initialize memory monitoring: {error}");
+                    eprintln!("{}", tr!("errors.memory", error = error));
                     return;
                 }
             };
@@ -54,10 +56,16 @@ impl Workspace {
     pub(super) fn render_memory(&self) -> impl IntoElement {
         let label = match self.memory_bytes {
             Some(bytes) if bytes >= 1024 * 1024 * 1024 => {
-                format!("Memory {:.2} GiB", bytes as f64 / (1024. * 1024. * 1024.))
+                tr!(
+                    "memory.gib",
+                    value = format!("{:.2}", bytes as f64 / (1024. * 1024. * 1024.))
+                )
             }
-            Some(bytes) => format!("Memory {:.1} MiB", bytes as f64 / (1024. * 1024.)),
-            None => "Memory —".into(),
+            Some(bytes) => tr!(
+                "memory.mib",
+                value = format!("{:.1}", bytes as f64 / (1024. * 1024.))
+            ),
+            None => tr!("memory.unknown"),
         };
         div()
             .flex_shrink_0()

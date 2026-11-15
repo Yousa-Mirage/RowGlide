@@ -3,8 +3,11 @@
 //! `run` is the public launch boundary. Workspace, table and cell implementation
 //! modules stay private; concrete engine selection belongs to `rowglide-app`.
 
+rust_i18n::i18n!("locales", fallback = "en");
+
 mod cells;
 mod clipboard;
+mod i18n;
 mod table;
 mod workspace;
 
@@ -14,11 +17,13 @@ use std::sync::Arc;
 
 /// Initialize GPUI Kit with the supplied backend and application-wide SQL result store.
 ///
-/// Installs assets and the light theme, creates the workspace and quits when the
+/// Selects Chinese or English from the system language, synchronizes GPUI Kit,
+/// installs assets and the light theme, creates the workspace and quits when the
 /// last window closes. The caller selects and constructs the backend; this layer
 /// depends only on its shared interface. Invoke from the application's main
 /// thread. Window creation failures are printed to stderr before quitting.
 pub fn run(backend: Arc<dyn rowglide_core::Backend>, results: Arc<rowglide_core::ResultStore>) {
+    i18n::initialize();
     application().with_assets(assets::Assets).run(move |cx| {
         init(cx);
         Theme::change(ThemeMode::Light, None, cx);
@@ -47,7 +52,7 @@ pub fn run(backend: Arc<dyn rowglide_core::Backend>, results: Arc<rowglide_core:
         if let Err(error) = open_window(options, cx, move |window, cx| {
             cx.new(|cx| workspace::Workspace::new(backend, results, window, cx))
         }) {
-            eprintln!("Cannot open Rowglide: {error}");
+            eprintln!("{}", i18n::tr!("errors.open_window", error = error));
             cx.quit();
         }
 

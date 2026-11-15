@@ -5744,6 +5744,9 @@ dependencies = [
  "futures-lite",
  "gpui-kit",
  "rowglide-core",
+ "rust-i18n",
+ "serde_json",
+ "sys-locale",
  "sysinfo 0.40.3",
  "tokio",
 ]

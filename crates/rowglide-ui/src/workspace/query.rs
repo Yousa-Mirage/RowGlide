@@ -1,5 +1,7 @@
 //! Browse input validation and background query lifecycle.
 
+use crate::i18n::tr;
+
 use super::state::{BrowseDraft, PageSummary, RequestKey};
 use super::{TabMode, Workspace};
 use gpui_kit::*;
@@ -80,7 +82,7 @@ impl Workspace {
             }
             Err(error) => {
                 self.error = true;
-                self.status = error.to_string();
+                self.status = crate::i18n::query_error(&error);
                 cx.notify();
             }
         }
@@ -123,7 +125,7 @@ impl Workspace {
             }
             Err(error) => {
                 self.error = true;
-                self.status = error.to_string();
+                self.status = crate::i18n::query_error(&error);
                 cx.notify();
             }
         }
@@ -166,7 +168,7 @@ impl Workspace {
         self.active_tab_mut().result_mut().page = None;
         self.busy = true;
         self.error = false;
-        self.status = "Loading data…".into();
+        self.status = tr!("query.loading");
         self.selected = None;
         self.pending_cell = None;
         self.expanded.clear();
@@ -245,7 +247,7 @@ impl Workspace {
     fn finish_query_error(&mut self, error: QueryError, cx: &mut Context<Self>) {
         self.busy = false;
         self.error = !matches!(error, QueryError::Cancelled);
-        self.status = error.to_string();
+        self.status = crate::i18n::query_error(&error);
         self.table.update(cx, |table, cx| {
             table.delegate_mut().loading = false;
             table.refresh(cx);
@@ -265,7 +267,7 @@ impl Workspace {
         self.generation += 1;
         self.busy = false;
         self.error = false;
-        self.status = "Cancelled · run a query to load data".into();
+        self.status = tr!("query.cancelled");
         if let Some(result) = &self.table.read(cx).delegate().sql_result {
             result.cancel();
         }

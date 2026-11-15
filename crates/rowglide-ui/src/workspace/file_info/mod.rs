@@ -3,6 +3,8 @@
 mod render;
 mod table;
 
+use crate::i18n::tr;
+
 use super::Workspace;
 use gpui_kit::component::table::{TableEvent, TableState};
 use gpui_kit::*;
@@ -154,7 +156,7 @@ impl Workspace {
         let request = match ParquetRequest::new(section, tab.info.offset) {
             Ok(request) => request,
             Err(error) => {
-                self.file_info.error = Some(error.to_string());
+                self.file_info.error = Some(crate::i18n::query_error(&error));
                 cx.notify();
                 return;
             }
@@ -186,7 +188,7 @@ impl Workspace {
                     table.delegate_mut().loading = false;
                     match result {
                         Ok(page) => table.delegate_mut().page = Some(page),
-                        Err(error) => this.file_info.error = Some(error.to_string()),
+                        Err(error) => this.file_info.error = Some(crate::i18n::query_error(&error)),
                     }
                     table.refresh(cx);
                     if table
@@ -255,10 +257,10 @@ impl Workspace {
 /// Label source-file counts explicitly, keeping them distinct from filtered/query row counts.
 pub(super) fn source_counts(source: &Source) -> Option<String> {
     let summary = source.parquet.as_ref()?;
-    Some(format!(
-        "Source {} rows · {} columns",
-        source.rows.map_or("?".into(), |rows| rows.to_string()),
-        summary.columns
+    Some(tr!(
+        "info.source_counts",
+        rows = source.rows.map_or("?".into(), |rows| rows.to_string()),
+        columns = summary.columns
     ))
 }
 
