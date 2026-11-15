@@ -79,7 +79,6 @@ pub(crate) fn query_error(error: &QueryError) -> String {
 fn filter_error(error: &rowglide_core::FilterError) -> String {
     use rowglide_core::FilterError;
     match error {
-        FilterError::TooMany => tr_string!("filters.too_many"),
         FilterError::SchemaChanged => tr_string!("filters.schema"),
         FilterError::Column(column) => tr_string!("filters.bad_column", column = column + 1),
         FilterError::UnsupportedType => tr_string!("filters.unsupported"),

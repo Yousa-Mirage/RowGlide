@@ -1,4 +1,4 @@
-//! Bounded per-tab predicate editing and applied-condition presentation.
+//! Per-tab predicate editing and applied-condition presentation.
 
 mod render;
 #[cfg(test)]
@@ -105,11 +105,8 @@ impl Workspace {
         }
     }
 
-    /// Add the first supported source column, respecting the shared condition limit.
+    /// Add a condition using the first supported source column without a fixed count limit.
     pub(super) fn add_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.active_tab().drafts.filters.len() >= rowglide_core::MAX_FILTERS {
-            return;
-        }
         self.active_tab_mut().drafts = self.browse_draft(cx);
         let Some((column, field)) = self
             .active_tab()

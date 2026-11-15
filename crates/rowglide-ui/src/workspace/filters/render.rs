@@ -22,7 +22,6 @@ impl Workspace {
         let blocked = tab.changed || self.reloading == Some(tab.source.id);
         let dirty = !self.browse_draft(cx).matches_query(&tab.browse);
         let can_add = !blocked
-            && tab.drafts.filters.len() < rowglide_core::MAX_FILTERS
             && tab
                 .source
                 .schema

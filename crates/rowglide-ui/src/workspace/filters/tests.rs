@@ -56,7 +56,7 @@ fn editor_controls_and_cancel(cx: &mut TestAppContext) {
 
 /// Raw unfinished literals and panel preferences survive mode/tab switches without applying.
 #[gpui_kit::test]
-fn drafts_survive_sessions_and_are_bounded(cx: &mut TestAppContext) {
+fn drafts_survive_sessions_and_scroll_beyond_32_conditions(cx: &mut TestAppContext) {
     let outcome = (|| -> Result<(), Box<dyn std::error::Error>> {
         let (handle, view) = fixture(cx)?;
         cx.update_window(handle, |_, window, cx| {
@@ -77,15 +77,12 @@ fn drafts_survive_sessions_and_are_bounded(cx: &mut TestAppContext) {
                 for _ in 0..40 {
                     this.add_filter(window, cx);
                 }
-                assert_eq!(
-                    this.active_tab().drafts.filters.len(),
-                    rowglide_core::MAX_FILTERS
-                );
-                assert_eq!(this.filter_editors.len(), rowglide_core::MAX_FILTERS);
+                assert_eq!(this.active_tab().drafts.filters.len(), 41);
+                assert_eq!(this.filter_editors.len(), 41);
             });
             window.render_frame(cx);
             let first = view.read(cx).active_tab().drafts.filters[0].id;
-            let last = view.read(cx).active_tab().drafts.filters[rowglide_core::MAX_FILTERS - 1].id;
+            let last = view.read(cx).active_tab().drafts.filters[40].id;
             let viewport = window.find("filter-rows").bounds();
             assert!(viewport.size.height <= gpui_kit::px(224.));
             assert!(window.find(("filter-row", first)).bounds().size.height >= gpui_kit::px(24.));

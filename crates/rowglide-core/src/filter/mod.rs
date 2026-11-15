@@ -6,9 +6,6 @@ pub use parse::parse_filter_value;
 
 use arrow_schema::{DataType, Schema};
 
-/// Maximum number of AND-connected conditions accepted by every backend.
-pub const MAX_FILTERS: usize = 32;
-
 /// Scalar families supported by the first filter builder; dictionary values are unwrapped.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FilterKind {
@@ -120,9 +117,6 @@ impl FilterCondition {
 /// Validation failures shared by the editor, real backend and mock evaluator.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum FilterError {
-    /// The condition list exceeds its fixed resource limit.
-    #[error("At most {MAX_FILTERS} filter conditions are allowed")]
-    TooMany,
     /// The source has been reloaded since the request was constructed.
     #[error("Source schema changed; rebuild the filters")]
     SchemaChanged,
@@ -207,9 +201,6 @@ pub fn validate_filters(
     schema: &Schema,
     filters: &[FilterCondition],
 ) -> Result<Vec<FilterCondition>, FilterError> {
-    if filters.len() > MAX_FILTERS {
-        return Err(FilterError::TooMany);
-    }
     filters
         .iter()
         .enumerate()
@@ -363,7 +354,7 @@ mod tests {
         );
     }
 
-    /// Reject unsupported operators, invalid columns and more than the bounded condition count.
+    /// Reject unsupported operators and invalid columns without imposing a condition count cap.
     #[test]
     fn rejects_invalid_filter_shape() {
         let schema = Schema::new(vec![Field::new("text", DataType::Utf8, true)]);
@@ -388,15 +379,12 @@ mod tests {
             ),
             Err(FilterError::Condition { .. })
         ));
-        let too_many = (0..=MAX_FILTERS)
+        let conditions = (0..64)
             .map(|_| FilterCondition::IsNull {
                 column: 0,
                 negated: false,
             })
             .collect::<Vec<_>>();
-        assert!(matches!(
-            validate_filters(&schema, &too_many),
-            Err(FilterError::TooMany)
-        ));
+        assert_eq!(validate_filters(&schema, &conditions), Ok(conditions));
     }
 }

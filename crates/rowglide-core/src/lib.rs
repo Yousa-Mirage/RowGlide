@@ -38,6 +38,6 @@ pub use recent::{RecentError, RecentFiles};
 
 mod filter;
 pub use filter::{
-    CompareOp, FilterCondition, FilterError, FilterKind, FilterValue, MAX_FILTERS,
-    filter_data_type, filter_kind, filter_operators, parse_filter_value, validate_filters,
+    CompareOp, FilterCondition, FilterError, FilterKind, FilterValue, filter_data_type,
+    filter_kind, filter_operators, parse_filter_value, validate_filters,
 };

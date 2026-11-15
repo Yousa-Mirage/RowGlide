@@ -100,7 +100,7 @@ once per second and displayed in MiB/GiB. An unavailable reading appears as `—
 ## Browse filters
 
 Click **Filters (0)** to expand the condition editor. Choose a source column,
-operator and value, then **Apply**. Up to 32 top-level scalar conditions are joined
+operator and value, then **Apply**. Top-level scalar conditions are joined
 with AND and evaluated across the complete source before sorting and pagination.
 SQL remains independent of all Browse controls.
 
