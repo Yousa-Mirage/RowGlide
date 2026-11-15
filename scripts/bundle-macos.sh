@@ -15,7 +15,7 @@ cat > "$bundle/Contents/Info.plist" <<'PLIST'
 <key>CFBundleIdentifier</key><string>dev.rowglide.app</string>
 <key>CFBundleExecutable</key><string>rowglide</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleVersion</key><string>0.1.0</string>
+<key>CFBundleVersion</key><string>0.0.1</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST

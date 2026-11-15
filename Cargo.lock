@@ -5735,7 +5735,7 @@ dependencies = [
 
 [[package]]
 name = "rowglide-app"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "argh",
  "rowglide-core",
@@ -5745,7 +5745,7 @@ dependencies = [
 
 [[package]]
 name = "rowglide-core"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "arrow-array",
  "arrow-cast",
@@ -5765,7 +5765,7 @@ dependencies = [
 
 [[package]]
 name = "rowglide-ui"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "arrow-array",
  "arrow-cast",
