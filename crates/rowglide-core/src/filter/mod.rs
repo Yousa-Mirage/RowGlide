@@ -1,5 +1,6 @@
 //! Engine-independent scalar predicates, Arrow capabilities and strict value validation.
 
+pub(crate) mod evaluate;
 mod parse;
 pub use parse::parse_filter_value;
 

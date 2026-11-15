@@ -91,23 +91,34 @@ impl Backend for MockBackend {
             .ok_or_else(|| QueryError::Invalid("Unknown demo dataset".into()))?;
         let nested = source.id != 1;
 
-        // Filter row IDs before materializing Arrow batches.
+        if query.sql.is_none() && query.schema_revision != source.schema_revision {
+            return Err(crate::FilterError::SchemaChanged.into());
+        }
         let mut ids = Vec::new();
-        let needle = query.search.to_lowercase();
-        for id in 0..source.rows.unwrap_or(0) {
-            if id % 256 == 0 {
-                cancellation.check()?;
-            }
-            if needle.is_empty()
-                || name(id).to_lowercase().contains(&needle)
-                || region(id).to_lowercase().contains(&needle)
-            {
-                ids.push(id);
+        if query.sql.is_some() {
+            ids.extend(0..source.rows.unwrap_or(0));
+        } else {
+            crate::validate_filters(&source.schema, &query.filters)?;
+            let mut cursor = MockCursor {
+                schema: source.schema.clone(),
+                ids: (0..source.rows.unwrap_or(0)).collect(),
+                offset: 0,
+                nested,
+                cancellation: cancellation.clone(),
+            };
+            let mut start = 0;
+            while let Some(batch) = cursor.next_batch()? {
+                ids.extend(
+                    crate::filter::evaluate::matching_rows(&batch, &query, &cancellation)?
+                        .into_iter()
+                        .map(|row| start + row),
+                );
+                start += batch.num_rows();
             }
         }
 
         // Sort the complete filtered set before applying the browse range.
-        if let Some(sort) = query.sort {
+        if let Some(sort) = query.sort.filter(|_| query.sql.is_none()) {
             if sort.column >= 5 {
                 return Err(QueryError::Invalid(
                     "Nested columns cannot be sorted in the demo".into(),
