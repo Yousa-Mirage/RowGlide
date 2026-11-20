@@ -152,7 +152,7 @@ impl Workspace {
                                                     div()
                                                         .w_full()
                                                         .overflow_hidden()
-                                                        .text_ellipsis()
+                                                        .text_ellipsis_middle()
                                                         .text_xs()
                                                         .text_color(cx.theme().muted_foreground)
                                                         .child(parent),
