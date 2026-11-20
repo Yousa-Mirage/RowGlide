@@ -204,6 +204,8 @@
     "not_null": "is not null",
     "contains": "contains",
     "starts": "starts with",
+    "like": "matches wildcard",
+    "like_hint": "Case-sensitive · % any sequence · _ one character",
     "ends": "ends with",
     "no_match": "No rows match the current search and filters",
     "offset_empty": "No rows at this offset. Return to the first page.",

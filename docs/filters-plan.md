@@ -15,7 +15,7 @@
 - Quick Search 在 Apply 时 trim，纯空白表示不搜索。编辑时保留原始输入。
 - Filters 的文本值不 trim，允许精确匹配空字符串和前后空格。
 - contains / starts with / ends with 大小写不敏感；equals / not equals 大小写敏感。
-- `%`、`_`、引号与反斜线都是普通输入字符，不解释为 LIKE 模式。
+- 文本列提供独立的「通配符匹配」操作符，以区分大小写的 LIKE 匹配完整值。仅该操作符将 `%` 与 `_` 解释为任意长度字符序列和单个字符；反斜线按字面匹配。
 - `is null` 仅匹配 SQL NULL；`is not null` 包含空字符串；`equals ""` 仅匹配空字符串。
 - 普通比较遵循 SQL NULL 语义：NULL 不通过比较条件。`!= "x" AND IS NOT NULL` 仍不包含 NULL；包含 NULL 需要 OR，第一版不支持。
 - 无可搜索文本列时禁用 Quick Search，并显示「该文件没有文本列」。后端收到非空搜索仍返回明确的能力错误，不使用 WHERE false 隐藏这一情况。
@@ -31,7 +31,7 @@
 
 - `Query.filters: Vec<FilterCondition>`：已解析、已应用的 Browse 条件。
 - `FilterCondition::Compare { column, op, value }` 与 `IsNull { column, negated }`：NULL 判断不携带无意义的值。
-- `CompareOp`：Equals、NotEquals、GreaterThan、GreaterThanOrEqual、LessThan、LessThanOrEqual、Contains、StartsWith、EndsWith。
+- `CompareOp`：Equals、NotEquals、GreaterThan、GreaterThanOrEqual、LessThan、LessThanOrEqual、Contains、StartsWith、EndsWith、Like。
 - `FilterValue`：Text、Integer(i64)、Unsigned(u64)、Float(f64)、Boolean，以及精确保留值的 Decimal、Date、Timestamp。
 - Decimal、Date、Timestamp 在边界处严格解析；规范化后的模型保留精确值和必要类型信息，不通过 f64 或本地语言日期格式转换。
 - `FilterError`：类型化的列无效、操作符不支持、值无效、溢出、精度损失、条件过多和 schema 过期等错误。包含条件位置/字段上下文，供 UI 定位并本地化。

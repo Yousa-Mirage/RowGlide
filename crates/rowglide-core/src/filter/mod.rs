@@ -48,6 +48,8 @@ pub enum CompareOp {
     StartsWith,
     /// Case-insensitive literal suffix.
     EndsWith,
+    /// Case-sensitive SQL LIKE over the whole text, with percent and underscore wildcards.
+    Like,
 }
 
 /// Typed filter literal; decimal and temporal strings are strictly validated before execution.
@@ -181,7 +183,7 @@ pub fn filter_kind(data_type: &DataType) -> Option<FilterKind> {
 pub fn filter_operators(data_type: &DataType) -> &'static [CompareOp] {
     use CompareOp::*;
     match filter_kind(data_type) {
-        Some(FilterKind::Text) => &[Contains, StartsWith, EndsWith, Equals, NotEquals],
+        Some(FilterKind::Text) => &[Contains, StartsWith, EndsWith, Like, Equals, NotEquals],
         Some(FilterKind::Boolean) => &[Equals, NotEquals],
         Some(_) => &[
             Equals,

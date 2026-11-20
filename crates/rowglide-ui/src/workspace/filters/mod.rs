@@ -87,7 +87,11 @@ impl Workspace {
             let input = cx.new(|cx| {
                 InputState::new(window, cx)
                     .default_value(row.value)
-                    .placeholder(value_hint(&row.data_type))
+                    .placeholder(if row.op == Some(CompareOp::Like) {
+                        tr!("filters.like_hint")
+                    } else {
+                        value_hint(&row.data_type)
+                    })
             });
             let subscription = cx.observe(&input, move |this, input, cx| {
                 if let Some(tab) = this.tabs.iter_mut().find(|tab| tab.source.id == source)
@@ -289,6 +293,7 @@ fn operator_label(op: Option<CompareOp>, negated: bool) -> SharedString {
         Some(CompareOp::LessThanOrEqual) => "≤".into(),
         Some(CompareOp::Contains) => tr!("filters.contains"),
         Some(CompareOp::StartsWith) => tr!("filters.starts"),
+        Some(CompareOp::Like) => tr!("filters.like"),
         Some(CompareOp::EndsWith) => tr!("filters.ends"),
     }
 }

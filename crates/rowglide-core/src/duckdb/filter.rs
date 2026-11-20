@@ -46,6 +46,7 @@ pub(super) fn predicates(
                     CompareOp::StartsWith => {
                         format!("starts_with(lower({name}), lower({expression}))")
                     }
+                    CompareOp::Like => format!("{name} LIKE {expression}"),
                     CompareOp::EndsWith => format!("ends_with(lower({name}), lower({expression}))"),
                     _ => format!(
                         "{name} {} {expression}",

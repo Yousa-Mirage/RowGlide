@@ -87,6 +87,40 @@ fn fold(text: &str) -> String {
         .collect()
 }
 
+/// Match a complete Unicode string with SQL LIKE wildcards and no escape character.
+/// A percent can absorb one more character on mismatch. Retaining only the latest
+/// percent position avoids recursion or allocating a table for the whole input.
+fn like(mut text: &str, mut pattern: &str) -> bool {
+    let mut retry = None;
+    while let Some(ch) = text.chars().next() {
+        match pattern.chars().next() {
+            Some('%') => {
+                pattern = pattern.trim_start_matches('%');
+                if pattern.is_empty() {
+                    return true;
+                }
+                retry = Some((text, pattern));
+            }
+            Some(token) if token == '_' || token == ch => {
+                text = &text[ch.len_utf8()..];
+                pattern = &pattern[token.len_utf8()..];
+            }
+            _ => {
+                let Some((previous, suffix)) = retry else {
+                    return false;
+                };
+                let Some(skipped) = previous.chars().next() else {
+                    return false;
+                };
+                text = &previous[skipped.len_utf8()..];
+                pattern = suffix;
+                retry = Some((text, suffix));
+            }
+        }
+    }
+    pattern.trim_start_matches('%').is_empty()
+}
+
 /// Compare a non-null Arrow scalar without converting exact numeric values through floats.
 fn compare(
     array: &dyn Array,
@@ -99,6 +133,7 @@ fn compare(
         return Ok(match op {
             CompareOp::Contains => fold(&text).contains(&fold(expected)),
             CompareOp::StartsWith => fold(&text).starts_with(&fold(expected)),
+            CompareOp::Like => like(&text, expected),
             CompareOp::EndsWith => fold(&text).ends_with(&fold(expected)),
             CompareOp::Equals => text == *expected,
             CompareOp::NotEquals => text != *expected,
@@ -266,6 +301,12 @@ mod tests {
         let mut stmt = conn.prepare("SELECT * FROM current_file")?;
         let batch = stmt.query_arrow([])?.next().ok_or("Missing fixture")?;
         for (column, op, value) in [
+            (1, CompareOp::Like, FilterValue::Text("_ ΟΣ %on".into())),
+            (1, CompareOp::Like, FilterValue::Text("%o%on".into())),
+            (1, CompareOp::Like, FilterValue::Text("%london".into())),
+            (1, CompareOp::Like, FilterValue::Text("London".into())),
+            (1, CompareOp::Like, FilterValue::Text("%%".into())),
+            (1, CompareOp::Like, FilterValue::Text(String::new())),
             (1, CompareOp::Contains, FilterValue::Text("i οσ".into())),
             (1, CompareOp::Equals, FilterValue::Text("".into())),
             (2, CompareOp::Equals, FilterValue::Unsigned(u64::MAX)),

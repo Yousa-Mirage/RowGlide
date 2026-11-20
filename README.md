@@ -105,7 +105,9 @@ with AND and evaluated across the complete source before sorting and pagination.
 SQL remains independent of all Browse controls.
 
 - Text supports literal, case-insensitive contains / starts with / ends with, and
-  case-sensitive equality / inequality. `%` and `_` are ordinary characters.
+  case-sensitive equality / inequality. Choose **matches wildcard** for case-sensitive whole-value SQL LIKE matching.
+  `%` matches any sequence (including empty) and `_` matches one character.
+  For example, `A_%` matches `Ada` and `A张`.
 - Signed and unsigned integers retain their full ranges. Decimals are validated
   against the source precision and scale without floating-point conversion.
   Float literals must be finite; boolean values use a Yes/No selector.
