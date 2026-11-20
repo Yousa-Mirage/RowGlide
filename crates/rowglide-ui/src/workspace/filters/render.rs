@@ -112,7 +112,6 @@ impl Workspace {
                     .child(
                         Button::new("clear-filters")
                             .small()
-                            .ghost()
                             .label(tr!("filters.clear"))
                             .disabled(blocked || tab.drafts.filters.is_empty())
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -121,7 +120,14 @@ impl Workspace {
                                 cx.notify();
                             })),
                     )
-                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(tr!("filters.help")),
+                    )
                     .child(
                         Button::new("discard-filters")
                             .small()
@@ -140,12 +146,6 @@ impl Workspace {
                                 cx.listener(|this, _, window, cx| this.apply_filter(window, cx)),
                             ),
                     ),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(tr!("filters.help")),
             )
             .into_any_element()
     }
