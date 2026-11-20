@@ -37,7 +37,7 @@ impl Workspace {
     }
 
     /// Render a centered welcome page with a primary opener and up to five recent paths.
-    /// Rows are keyboard-accessible buttons; path tooltips disambiguate long or equal names.
+    /// Each button displays the parent directory and exposes the full path to screen readers.
     /// Clicking uses the same cancellable background workflow as picker and dropped files.
     pub(super) fn render_welcome(&self, cx: &mut Context<Self>) -> impl IntoElement {
         div()
@@ -132,7 +132,6 @@ impl Workspace {
                                             "welcome.open_recent",
                                             path = full_path
                                         ))
-                                        .tooltip(full_path)
                                         .child(Icon::new(IconName::File))
                                         .child(
                                             div()
