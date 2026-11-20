@@ -13,7 +13,6 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use rowglide_core::ParquetSection;
 
 impl Workspace {
     /// Render the resizable side panel with header, compact section tabs and bounded content.
@@ -22,11 +21,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let section = self.active_tab().info.section;
-        let index = match section {
-            None => 0,
-            Some(ParquetSection::Schema) => 1,
-            Some(ParquetSection::RowGroups) => 2,
-        };
+        let index = usize::from(section);
         let handle = resize_handle("file-info-divider", Axis::Horizontal)
             .inside(HandleEdge::Leading)
             .on_drag(ResizePanel::FileInfo, |drag, _, _, cx| {
@@ -74,64 +69,57 @@ impl Workspace {
                     .px_3()
                     .selected_index(index)
                     .children(
-                        [
-                            tr!("info.overview"),
-                            tr!("info.schema"),
-                            tr!("info.row_groups"),
-                        ]
-                        .into_iter()
-                        .enumerate()
-                        .map(|(tab_index, name)| {
-                            Tab::new()
-                                .label(name)
-                                .px_2()
-                                .when(tab_index == index, |tab| {
-                                    tab.track_focus(&self.info_tabs_focus).tab_stop(true)
-                                })
-                                .focus_visible(|style| {
-                                    style.border_1().border_color(cx.theme().ring)
-                                })
-                                .on_key_down(cx.listener(
-                                    move |this, event: &KeyDownEvent, window, cx| {
-                                        if !this.info_tabs_focus.is_focused(window)
-                                            || event.keystroke.modifiers.modified()
-                                        {
-                                            return;
-                                        }
-                                        if let Some(next) =
-                                            crate::workspace::actions::tab_destination(
-                                                &event.keystroke.key,
-                                                index,
-                                                3,
-                                            )
-                                        {
-                                            if next != index {
-                                                this.select_info_section(next, cx);
+                        [tr!("info.overview"), tr!("info.schema")]
+                            .into_iter()
+                            .enumerate()
+                            .map(|(tab_index, name)| {
+                                Tab::new()
+                                    .label(name)
+                                    .px_2()
+                                    .when(tab_index == index, |tab| {
+                                        tab.track_focus(&self.info_tabs_focus).tab_stop(true)
+                                    })
+                                    .focus_visible(|style| {
+                                        style.border_1().border_color(cx.theme().ring)
+                                    })
+                                    .on_key_down(cx.listener(
+                                        move |this, event: &KeyDownEvent, window, cx| {
+                                            if !this.info_tabs_focus.is_focused(window)
+                                                || event.keystroke.modifiers.modified()
+                                            {
+                                                return;
                                             }
-                                            this.info_tabs_scroll.scroll_to_item(next);
-                                            cx.notify();
-                                            this.info_tabs_focus.focus(window, cx);
-                                            cx.stop_propagation();
-                                        }
-                                    },
-                                ))
-                        }),
+                                            if let Some(next) =
+                                                crate::workspace::actions::tab_destination(
+                                                    &event.keystroke.key,
+                                                    index,
+                                                    2,
+                                                )
+                                            {
+                                                if next != index {
+                                                    this.select_info_section(next, cx);
+                                                }
+                                                this.info_tabs_scroll.scroll_to_item(next);
+                                                cx.notify();
+                                                this.info_tabs_focus.focus(window, cx);
+                                                cx.stop_propagation();
+                                            }
+                                        },
+                                    ))
+                            }),
                     )
                     .on_click(cx.listener(|this, index: &usize, window, cx| {
                         this.select_info_section(*index, cx);
                         this.info_tabs_focus.focus(window, cx);
                     })),
             );
-        let hint = match section {
-            None => {
-                return panel
-                    .child(self.render_file_overview(cx))
-                    .child(handle)
-                    .into_any_element();
-            }
-            Some(ParquetSection::Schema) => tr!("info.schema_hint"),
-            Some(ParquetSection::RowGroups) => tr!("info.groups_hint"),
-        };
+        if !section {
+            return panel
+                .child(self.render_file_overview(cx))
+                .child(handle)
+                .into_any_element();
+        }
+        let hint = tr!("info.schema_hint");
         panel = panel.child(
             div()
                 .px_4()
@@ -315,10 +303,6 @@ impl Workspace {
                     tr!("info.fields", count = summary.columns),
                 ),
                 (
-                    tr!("info.row_groups"),
-                    summary.row_groups.to_string().into(),
-                ),
-                (
                     tr!("info.version"),
                     summary.format_version.to_string().into(),
                 ),
@@ -346,13 +330,7 @@ impl Workspace {
                 );
             }
         }
-        content.child(
-            div()
-                .mt_2()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(tr!("info.note")),
-        )
+        content
     }
 }
 

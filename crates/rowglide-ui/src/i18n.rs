@@ -110,24 +110,6 @@ pub(crate) fn metadata_header(name: &str) -> SharedString {
         "precision" => tr!("metadata.precision"),
         "scale" => tr!("metadata.scale"),
         "field_id" => tr!("metadata.field_id"),
-        "row_group_id" => tr!("metadata.row_group_id"),
-        "path_in_schema" => tr!("metadata.path_in_schema"),
-        "column_id" => tr!("metadata.column_id"),
-        "row_group_num_rows" => tr!("metadata.row_group_num_rows"),
-        "row_group_num_columns" => tr!("metadata.row_group_num_columns"),
-        "compression" => tr!("metadata.compression"),
-        "encodings" => tr!("metadata.encodings"),
-        "total_compressed_size" => tr!("metadata.total_compressed_size"),
-        "total_uncompressed_size" => tr!("metadata.total_uncompressed_size"),
-        "num_values" => tr!("metadata.num_values"),
-        "stats_min_value" => tr!("metadata.stats_min_value"),
-        "stats_max_value" => tr!("metadata.stats_max_value"),
-        "min_is_exact" => tr!("metadata.min_is_exact"),
-        "max_is_exact" => tr!("metadata.max_is_exact"),
-        "stats_null_count" => tr!("metadata.stats_null_count"),
-        "stats_distinct_count" => tr!("metadata.stats_distinct_count"),
-        "data_page_offset" => tr!("metadata.data_page_offset"),
-        "dictionary_page_offset" => tr!("metadata.dictionary_page_offset"),
         _ => name.replace('_', " ").into(),
     }
 }
@@ -143,11 +125,11 @@ mod tests {
     #[test]
     fn shared_catalog_text_preserves_borrowed_storage() -> Result<(), &'static str> {
         for locale in ["en", "zh-CN"] {
-            let text = rust_i18n::t!("info.note", locale = locale);
+            let text = rust_i18n::t!("info.schema_hint", locale = locale);
             let Cow::Borrowed(original) = text else {
                 return Err("Static catalog lookup unexpectedly allocated");
             };
-            let translated = tr!("info.note", locale = locale);
+            let translated = tr!("info.schema_hint", locale = locale);
             assert_eq!(translated.as_str(), original);
             assert_eq!(translated.as_ptr(), original.as_ptr());
             assert_eq!(translated.clone().as_ptr(), original.as_ptr());

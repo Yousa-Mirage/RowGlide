@@ -10,29 +10,15 @@ pub struct ParquetSummary {
     pub file_bytes: u64,
     /// Number of top-level fields exposed by the file reader.
     pub columns: usize,
-    /// Exact number of row groups recorded in the footer.
-    pub row_groups: u64,
     /// Optional producer identification from the footer; not inferred from the filename.
     pub created_by: Option<String>,
     /// Parquet format version recorded in the footer.
     pub format_version: i64,
 }
 
-/// Detailed metadata relation requested independently of Browse and SQL results.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum ParquetSection {
-    /// Flattened schema excluding the root, retaining nested groups and original node IDs.
-    #[default]
-    Schema,
-    /// One record per row-group column chunk, including optional statistics.
-    RowGroups,
-}
-
-/// Validated fixed-size metadata page, separate from user data pagination.
+/// A validated schema detail request, separate from user data pagination.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ParquetRequest {
-    /// Which metadata relation to inspect.
-    pub section: ParquetSection,
     /// Zero-based relation offset; private so callers cannot bypass validation.
     offset: usize,
 }
@@ -42,11 +28,11 @@ impl ParquetRequest {
     pub const PAGE_SIZE: usize = 100;
 
     /// Validate an offset before converting it to the engine's signed integer range.
-    pub fn new(section: ParquetSection, offset: usize) -> Result<Self, QueryError> {
+    pub fn new(offset: usize) -> Result<Self, QueryError> {
         if offset > (i64::MAX as usize).saturating_sub(Self::PAGE_SIZE + 1) {
             return Err(QueryError::Invalid("Metadata offset is too large".into()));
         }
-        Ok(Self { section, offset })
+        Ok(Self { offset })
     }
 
     /// Return the zero-based offset of the requested metadata records.

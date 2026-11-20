@@ -8,7 +8,7 @@ use crate::i18n::tr;
 use super::Workspace;
 use gpui_kit::component::table::{TableEvent, TableState};
 use gpui_kit::*;
-use rowglide_core::{Cancellation, ParquetRequest, ParquetSection, Source};
+use rowglide_core::{Cancellation, ParquetRequest, Source};
 use table::{MetadataGrid, value_text};
 
 /// Lightweight preferences saved independently for every file, separate from Browse/SQL mode.
@@ -16,15 +16,15 @@ use table::{MetadataGrid, value_text};
 pub(super) struct InfoPreferences {
     /// Whether this tab presents file information instead of the selected-cell inspector.
     pub(super) open: bool,
-    /// None selects Overview, which needs no additional query.
-    section: Option<ParquetSection>,
+    /// None selects Overview; Some selects the schema detail page.
+    section: bool,
     /// Zero-based metadata record offset; unrelated to the data toolbar's Offset input.
     offset: usize,
 }
 
 impl InfoPreferences {
     /// Change metadata categories and reset pagination only when the category actually changes.
-    fn select(&mut self, section: Option<ParquetSection>) {
+    fn select(&mut self, section: bool) {
         if self.section != section {
             self.section = section;
             self.offset = 0;
@@ -149,11 +149,11 @@ impl Workspace {
             cx.notify();
             return;
         }
-        let Some(section) = tab.info.section else {
+        if !tab.info.section {
             cx.notify();
             return;
-        };
-        let request = match ParquetRequest::new(section, tab.info.offset) {
+        }
+        let request = match ParquetRequest::new(tab.info.offset) {
             Ok(request) => request,
             Err(error) => {
                 self.file_info.error = Some(crate::i18n::query_error(&error));
@@ -207,13 +207,9 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Select Overview, Schema or Row groups, resetting pagination when the section changes.
+    /// Select Overview or Schema, resetting pagination when the section changes.
     fn select_info_section(&mut self, index: usize, cx: &mut Context<Self>) {
-        let section = match index {
-            1 => Some(ParquetSection::Schema),
-            2 => Some(ParquetSection::RowGroups),
-            _ => None,
-        };
+        let section = index == 1;
         self.active_tab_mut().info.select(section);
         self.refresh_file_info(cx);
     }
@@ -266,7 +262,7 @@ pub(super) fn source_counts(source: &Source) -> Option<SharedString> {
 #[cfg(test)]
 mod tests {
     use super::{InfoPreferences, InfoRequestKey, source_counts};
-    use rowglide_core::{ParquetRequest, ParquetSection};
+    use rowglide_core::ParquetRequest;
     use rowglide_core::{ParquetSummary, Source};
 
     /// Per-tab section/page preferences stay independent; section changes reset only their page.
@@ -274,19 +270,19 @@ mod tests {
     fn preferences_and_request_identity() -> Result<(), rowglide_core::QueryError> {
         let mut first = InfoPreferences {
             open: true,
-            section: Some(ParquetSection::Schema),
+            section: true,
             offset: 100,
         };
         let second = InfoPreferences::default();
-        first.select(Some(ParquetSection::Schema));
+        first.select(true);
         assert_eq!(first.offset, 100);
-        first.select(Some(ParquetSection::RowGroups));
+        first.select(false);
         assert_eq!(first.offset, 0);
-        assert!(!second.open && second.section.is_none());
+        assert!(!second.open && !second.section);
         let key = InfoRequestKey {
             source: 1,
             revision: 1,
-            request: ParquetRequest::new(ParquetSection::Schema, 0)?,
+            request: ParquetRequest::new(0)?,
         };
         assert!(key.is_current(Some(key), 1, true));
         assert!(!key.is_current(None, 1, true));
@@ -296,7 +292,7 @@ mod tests {
         assert!(key != InfoRequestKey { source: 2, ..key });
         assert!(
             key != InfoRequestKey {
-                request: ParquetRequest::new(ParquetSection::Schema, 100)?,
+                request: ParquetRequest::new(100)?,
                 ..key
             }
         );
@@ -317,7 +313,6 @@ mod tests {
             parquet: Some(ParquetSummary {
                 file_bytes: 100,
                 columns: 3,
-                row_groups: 0,
                 created_by: None,
                 format_version: 1,
             }),

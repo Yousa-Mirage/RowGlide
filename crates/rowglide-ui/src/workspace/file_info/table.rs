@@ -149,7 +149,7 @@ impl TableDelegate for MetadataGrid {
         Some(self.label(row, col).into())
     }
 
-    /// Empty detail relations are valid, particularly for empty files and zero row groups.
+    /// Empty detail relations are valid, particularly for empty files.
     fn render_empty(
         &mut self,
         _: &mut Window,

@@ -1,8 +1,6 @@
 //! Parquet view registration, footer summaries and bounded metadata reads via DuckDB.
 
-use crate::{
-    Cancellation, ParquetPage, ParquetRequest, ParquetSection, ParquetSummary, Preview, QueryError,
-};
+use crate::{Cancellation, ParquetPage, ParquetRequest, ParquetSummary, Preview, QueryError};
 use duckdb::Connection;
 
 /// Bind the already parameterized source path to the connection-local data view.
@@ -18,9 +16,9 @@ pub(super) fn summary(
     conn: &Connection,
     columns: usize,
 ) -> Result<(usize, ParquetSummary), QueryError> {
-    let (rows, groups, size, created_by, version): (i64, i64, i64, Option<String>, i64) = conn.query_row(
-        "SELECT num_rows, num_row_groups, file_size_bytes, created_by, format_version FROM parquet_file_metadata(getvariable('source_path'))",
-        [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+    let (rows, size, created_by, version): (i64, i64, Option<String>, i64) = conn.query_row(
+        "SELECT num_rows, file_size_bytes, created_by, format_version FROM parquet_file_metadata(getvariable('source_path'))",
+        [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
     )?;
     let invalid =
         || QueryError::Invalid("Parquet footer contains an unsupported count or size".into());
@@ -29,7 +27,6 @@ pub(super) fn summary(
         ParquetSummary {
             file_bytes: u64::try_from(size).map_err(|_| invalid())?,
             columns,
-            row_groups: u64::try_from(groups).map_err(|_| invalid())?,
             created_by,
             format_version: version,
         },
@@ -46,19 +43,9 @@ pub(super) fn page(
     request: ParquetRequest,
     cancel: &Cancellation,
 ) -> Result<ParquetPage, QueryError> {
-    let relation = match request.section {
-        ParquetSection::Schema => {
-            // Skip by position, not name: actual fields may also be named root or schema.
-            "SELECT row_number() OVER () AS node, name, type AS physical_type, repetition_type, num_children, logical_type, converted_type, duckdb_type, type_length, precision, scale, field_id FROM parquet_schema(getvariable('source_path')) QUALIFY node > 1"
-        }
-        ParquetSection::RowGroups => {
-            "SELECT row_group_id, path_in_schema, column_id, row_group_num_rows, row_group_num_columns, compression, encodings, total_compressed_size, total_uncompressed_size, num_values, stats_min_value, stats_max_value, min_is_exact, max_is_exact, stats_null_count, stats_distinct_count, data_page_offset, dictionary_page_offset FROM parquet_metadata(getvariable('source_path'))"
-        }
-    };
-    let order = match request.section {
-        ParquetSection::Schema => "node",
-        ParquetSection::RowGroups => "row_group_id, column_id",
-    };
+    // Skip by position, not name: actual fields may also be named root or schema.
+    let relation = "SELECT row_number() OVER () AS node, name, type AS physical_type, repetition_type, num_children, logical_type, converted_type, duckdb_type, type_length, precision, scale, field_id FROM parquet_schema(getvariable('source_path')) QUALIFY node > 1";
+    let order = "node";
     // Only static relation fragments are interpolated; offsets and paths remain bound values.
     let sql = format!("SELECT * FROM ({relation}) ORDER BY {order} LIMIT ? OFFSET ?");
     let mut statement = conn.prepare(&sql)?;

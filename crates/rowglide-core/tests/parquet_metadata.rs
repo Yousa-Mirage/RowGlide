@@ -2,9 +2,7 @@
 
 use arrow_array::{Array, Int64Array, StringArray};
 use duckdb::Connection;
-use rowglide_core::{
-    Backend, Cancellation, DuckDbBackend, ParquetRequest, ParquetSection, QueryError,
-};
+use rowglide_core::{Backend, Cancellation, DuckDbBackend, ParquetRequest, QueryError};
 use std::{error::Error, fs};
 
 /// Inspect nested schema and exact footer totals independently of query results.
@@ -19,14 +17,10 @@ fn summary_schema_and_column_chunks() -> Result<(), Box<dyn Error>> {
     assert_eq!(source.rows, Some(5000));
     let summary = source.parquet.ok_or("Missing summary")?;
     assert_eq!(summary.columns, 3);
-    assert!(summary.row_groups >= 2);
     assert_eq!(summary.file_bytes, fs::metadata(&path)?.len());
     assert!(summary.created_by.is_some());
-    let schema = backend.parquet_metadata(
-        source.id,
-        ParquetRequest::new(ParquetSection::Schema, 0)?,
-        Cancellation::default(),
-    )?;
+    let schema =
+        backend.parquet_metadata(source.id, ParquetRequest::new(0)?, Cancellation::default())?;
     let mut names = Vec::new();
     for batch in &schema.preview.batches {
         let column = batch.schema().index_of("name")?;
@@ -47,28 +41,6 @@ fn summary_schema_and_column_chunks() -> Result<(), Box<dyn Error>> {
             .field_with_name("repetition_type")
             .is_ok()
     );
-    let chunks = backend.parquet_metadata(
-        source.id,
-        ParquetRequest::new(ParquetSection::RowGroups, 0)?,
-        Cancellation::default(),
-    )?;
-    assert_eq!(chunks.preview.rows as u64, summary.row_groups * 3);
-    assert!(
-        chunks
-            .preview
-            .schema
-            .field_with_name("min_is_exact")
-            .is_ok()
-    );
-    for batch in chunks.preview.batches {
-        let index = batch.schema().index_of("compression")?;
-        let compression = batch
-            .column(index)
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .ok_or("Expected compression strings")?;
-        assert!((0..compression.len()).all(|i| compression.value(i) == "ZSTD"));
-    }
     Ok(())
 }
 
@@ -94,7 +66,7 @@ fn wide_schema_paging_and_empty_file() -> Result<(), Box<dyn Error>> {
     for offset in [0, 100, 200] {
         let page = backend.parquet_metadata(
             source.id,
-            ParquetRequest::new(ParquetSection::Schema, offset)?,
+            ParquetRequest::new(offset)?,
             Cancellation::default(),
         )?;
         assert_eq!(page.has_next, offset < 200);
@@ -124,7 +96,7 @@ fn detail_cancellation_and_errors() -> Result<(), Box<dyn Error>> {
     )?;
     let backend = DuckDbBackend::default();
     let source = backend.open(&path, Cancellation::default())?;
-    let request = ParquetRequest::new(ParquetSection::Schema, 0)?;
+    let request = ParquetRequest::new(0)?;
     let cancel = Cancellation::default();
     cancel.cancel();
     assert!(matches!(
@@ -150,7 +122,7 @@ fn detail_cancellation_and_errors() -> Result<(), Box<dyn Error>> {
             .parquet_metadata(source.id, request, Cancellation::default())
             .is_err()
     );
-    assert!(ParquetRequest::new(ParquetSection::Schema, usize::MAX).is_err());
+    assert!(ParquetRequest::new(usize::MAX).is_err());
     Ok(())
 }
 
@@ -183,7 +155,7 @@ fn waiting_metadata_cancels_without_cancelling_data_query() -> Result<(), Box<dy
     let cancel = Cancellation::default();
     let worker_cancel = cancel.clone();
     let worker_backend = backend.clone();
-    let request = ParquetRequest::new(ParquetSection::Schema, 0)?;
+    let request = ParquetRequest::new(0)?;
     let (started, ready) = mpsc::channel();
     let (sender, receiver) = mpsc::channel();
     let worker = thread::spawn(move || {

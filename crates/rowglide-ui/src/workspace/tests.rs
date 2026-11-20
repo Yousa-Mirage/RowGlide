@@ -341,7 +341,6 @@ fn file_info_keyboard_and_dismissal(cx: &mut TestAppContext) {
                 view.active_tab_mut().source.parquet = Some(rowglide_core::ParquetSummary {
                     file_bytes: 1024,
                     columns: 7,
-                    row_groups: 1,
                     created_by: None,
                     format_version: 2,
                 });

@@ -368,20 +368,19 @@ Copyright 2026 Yousa-Mirage. Licensed under Apache-2.0; see [LICENSE](LICENSE).
 
 ## Parquet inspection
 
-Opening a Parquet file reads its exact row count, row-group count, file size and
-producer/version from the footer, alongside the Arrow schema. This does not run
+Opening a Parquet file reads its exact row count, file size and producer/version
+from the footer, alongside the Arrow schema. This does not run
 a data COUNT scan. Top-level Arrow columns and Parquet leaf columns are distinct.
 
-The backend exposes paged original schema and row-group column chunks. Each page
-retains at most 100 records and 8 MiB of Arrow buffers. Missing statistics stay
-null and minimum/maximum exactness flags are preserved. DuckDB may still parse
-the full footer internally.
+The backend exposes the original schema in bounded pages. Each page retains at
+most 100 records and 8 MiB of Arrow buffers. DuckDB may still parse the full
+footer internally.
 Overview information is captured at opening; detail requests read the current file.
 Files should remain unchanged while open. CSV inspection remains unchanged.
 
 Use **File info** in the toolbar to open the right-side panel. **Overview** shows
-opening-time file facts; **Schema** and **Row groups** load detail pages only when
-selected. The status bar labels original file rows/columns as **Source**, separately
+opening-time file facts; **Schema** loads detail pages only when selected. The
+status bar labels original file rows/columns as **Source**, separately
 from the current Browse range or SQL result.
 
 The panel uses a virtualized table with horizontal scrolling for wide details.

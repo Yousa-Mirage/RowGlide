@@ -2,8 +2,7 @@
 
 use duckdb::Connection;
 use rowglide_core::{
-    Backend, Cancellation, DuckDbBackend, ParquetRequest, ParquetSection, Preview, Query,
-    QueryError,
+    Backend, Cancellation, DuckDbBackend, ParquetRequest, Preview, Query, QueryError,
 };
 use std::{error::Error, fs, path::Path};
 
@@ -40,11 +39,7 @@ fn changed_parquet_requires_reload() -> Result<(), Box<dyn Error>> {
         Err(QueryError::SourceChanged)
     ));
     assert!(matches!(
-        backend.parquet_metadata(
-            source.id,
-            ParquetRequest::new(ParquetSection::Schema, 0)?,
-            Cancellation::default()
-        ),
+        backend.parquet_metadata(source.id, ParquetRequest::new(0)?, Cancellation::default()),
         Err(QueryError::SourceChanged)
     ));
     let reloaded = backend.reload(source.id, Cancellation::default())?;
