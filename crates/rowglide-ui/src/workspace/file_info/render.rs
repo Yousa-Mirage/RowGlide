@@ -56,7 +56,7 @@ impl Workspace {
                         div()
                             .text_sm()
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child(tr!("info.title")),
+                            .child(self.active_tab().source.name.clone()),
                     )
                     .child(
                         Button::new("close-file-info")
@@ -65,15 +65,6 @@ impl Workspace {
                             .label(tr!("common.close"))
                             .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx))),
                     ),
-            )
-            .child(
-                div()
-                    .px_4()
-                    .pb_2()
-                    .text_xs()
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .child(self.active_tab().source.name.clone()),
             )
             .child(
                 TabBar::new("file-info-sections")
