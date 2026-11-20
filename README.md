@@ -146,17 +146,15 @@ controls use the same active semantic theme.
 
 Right-click a table cell or an inspector node and choose **Copy value** or
 **Copy as JSON**. Copying uses the original Arrow value, including full strings
-and numeric precision; it never copies the truncated display summary. Metadata's
-**Copy full value** button uses the same background serialization path.
+and numeric precision; it never copies the truncated display summary.
 
 - Value mode leaves scalar strings unquoted; JSON mode escapes and quotes them.
 - Lists become JSON arrays; structs become objects. Maps become arrays of
   `{"key": ..., "value": ...}` pairs to preserve duplicate and non-string keys.
 - Dictionary values are decoded. Null becomes `null`; empty strings remain empty
   in value mode and `""` in JSON mode.
-- Binary becomes reversible `0x` hexadecimal, including metadata binary values
-  whose preview may show readable UTF-8. Dates/times, durations, decimals and
-  nonfinite floats use Arrow text, quoted in JSON mode. Finite numbers retain
+- Binary becomes reversible `0x` hexadecimal. Dates/times, durations, decimals
+  and nonfinite floats use Arrow text, quoted in JSON mode. Finite numbers retain
   full precision; JSON consumers must support large integers to preserve them.
 - Unsupported types and duplicate struct field names produce an explicit error.
 
@@ -374,26 +372,22 @@ Opening a Parquet file reads its exact row count, row-group count, file size and
 producer/version from the footer, alongside the Arrow schema. This does not run
 a data COUNT scan. Top-level Arrow columns and Parquet leaf columns are distinct.
 
-The backend exposes paged original schema, row-group column chunks and raw file
-key/value metadata. Pages retain at most 100 records and 8 MiB of Arrow buffers;
-oversized metadata fails explicitly. Missing statistics stay null and minimum/maximum
-exactness flags are preserved. DuckDB may still parse the full footer internally.
+The backend exposes paged original schema and row-group column chunks. Each page
+retains at most 100 records and 8 MiB of Arrow buffers. Missing statistics stay
+null and minimum/maximum exactness flags are preserved. DuckDB may still parse
+the full footer internally.
 Overview information is captured at opening; detail requests read the current file.
 Files should remain unchanged while open. CSV inspection remains unchanged.
 
 Use **File info** in the toolbar to open the right-side panel. **Overview** shows
-opening-time file facts; **Schema**, **Row groups**, and **Metadata** load detail
-pages only when selected. The status bar labels original file rows/columns as
-**Source**, separately from the current Browse range or SQL result. Metadata
-pagination is independent of the data toolbar's Limit/Offset.
+opening-time file facts; **Schema** and **Row groups** load detail pages only when
+selected. The status bar labels original file rows/columns as **Source**, separately
+from the current Browse range or SQL result.
 
-The panel uses a virtualized table with horizontal scrolling for wide metadata.
-Select a detail cell to preview up to 2,000 characters and **Copy full value** to
-copy its complete content. Valid UTF-8 blobs display/copy as text; other blobs use
-reversible `0x` hexadecimal. Null and empty values remain distinct. File tabs retain
-their chosen panel section/page during the session, while only the active detail
-page is cached. Close/switch cancels old requests; errors offer **Retry** without
-replacing Browse/SQL results. The panel shares the right-hand area with the cell
+The panel uses a virtualized table with horizontal scrolling for wide details.
+File tabs retain their chosen panel section/page during the session, while only the
+active detail page is cached. Close/switch cancels old requests; errors offer **Retry**
+without replacing Browse/SQL results. The panel shares the right-hand area with the cell
 inspector: double-clicking a data cell opens the inspector. A single click only
 changes the table selection.
 

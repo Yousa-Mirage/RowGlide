@@ -207,12 +207,11 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Select Overview or one footer relation, resetting the relation offset on category changes.
+    /// Select Overview, Schema or Row groups, resetting pagination when the section changes.
     fn select_info_section(&mut self, index: usize, cx: &mut Context<Self>) {
         let section = match index {
             1 => Some(ParquetSection::Schema),
             2 => Some(ParquetSection::RowGroups),
-            3 => Some(ParquetSection::KeyValue),
             _ => None,
         };
         self.active_tab_mut().info.select(section);

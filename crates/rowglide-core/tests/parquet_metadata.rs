@@ -1,6 +1,6 @@
 //! Real Parquet footer inspection, typed metadata paging and error boundaries.
 
-use arrow_array::{Array, BinaryArray, Int64Array, StringArray};
+use arrow_array::{Array, Int64Array, StringArray};
 use duckdb::Connection;
 use rowglide_core::{
     Backend, Cancellation, DuckDbBackend, ParquetRequest, ParquetSection, QueryError,
@@ -109,49 +109,22 @@ fn wide_schema_paging_and_empty_file() -> Result<(), Box<dyn Error>> {
         }
     }
     assert_eq!(nodes, (2..=206).collect::<Vec<_>>());
-    let page = backend.parquet_metadata(
-        source.id,
-        ParquetRequest::new(ParquetSection::KeyValue, 0)?,
-        Cancellation::default(),
-    )?;
-    assert_eq!(page.preview.rows, 0);
-    assert_eq!(page.preview.schema.fields().len(), 3);
     Ok(())
 }
 
-/// Preserve original key/value blobs and surface cancellation and unsupported-source errors.
+/// Surface cancellation and unsupported-source errors for supported footer details.
 #[test]
-fn metadata_bytes_cancellation_and_errors() -> Result<(), Box<dyn Error>> {
+fn detail_cancellation_and_errors() -> Result<(), Box<dyn Error>> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("metadata.parquet");
     let conn = Connection::open_in_memory()?;
     conn.execute(
-        "COPY (SELECT 1 AS id) TO ? (FORMAT PARQUET, KV_METADATA {author: 'Rowglide', empty: ''})",
+        "COPY (SELECT 1 AS id) TO ? (FORMAT PARQUET)",
         [path.to_string_lossy().as_ref()],
     )?;
     let backend = DuckDbBackend::default();
     let source = backend.open(&path, Cancellation::default())?;
-    let request = ParquetRequest::new(ParquetSection::KeyValue, 0)?;
-    let page = backend.parquet_metadata(source.id, request, Cancellation::default())?;
-    assert_eq!(page.preview.rows, 2);
-    let mut pairs = Vec::new();
-    for batch in page.preview.batches {
-        let keys = batch
-            .column(1)
-            .as_any()
-            .downcast_ref::<BinaryArray>()
-            .ok_or("Keys must remain binary")?;
-        let values = batch
-            .column(2)
-            .as_any()
-            .downcast_ref::<BinaryArray>()
-            .ok_or("Values must remain binary")?;
-        for row in 0..batch.num_rows() {
-            pairs.push((keys.value(row).to_vec(), values.value(row).to_vec()));
-        }
-    }
-    assert!(pairs.contains(&(b"author".to_vec(), b"Rowglide".to_vec())));
-    assert!(pairs.contains(&(b"empty".to_vec(), Vec::new())));
+    let request = ParquetRequest::new(ParquetSection::Schema, 0)?;
     let cancel = Cancellation::default();
     cancel.cancel();
     assert!(matches!(
@@ -178,37 +151,6 @@ fn metadata_bytes_cancellation_and_errors() -> Result<(), Box<dyn Error>> {
             .is_err()
     );
     assert!(ParquetRequest::new(ParquetSection::Schema, usize::MAX).is_err());
-    Ok(())
-}
-
-/// A single huge metadata value fails the page budget without damaging later requests.
-#[test]
-fn oversized_metadata_is_explicit_and_recoverable() -> Result<(), Box<dyn Error>> {
-    let temp = tempfile::tempdir()?;
-    let path = temp.path().join("large-metadata.parquet");
-    let conn = Connection::open_in_memory()?;
-    let value = "x".repeat(9 * 1024 * 1024);
-    conn.execute(
-        "COPY (SELECT 1 AS id) TO ? (FORMAT PARQUET, KV_METADATA {large: ?})",
-        duckdb::params![path.to_string_lossy().as_ref(), value],
-    )?;
-    let backend = DuckDbBackend::default();
-    let source = backend.open(&path, Cancellation::default())?;
-    let error = backend
-        .parquet_metadata(
-            source.id,
-            ParquetRequest::new(ParquetSection::KeyValue, 0)?,
-            Cancellation::default(),
-        )
-        .err()
-        .ok_or("Oversized metadata succeeded")?;
-    assert!(error.to_string().contains("8 MiB"));
-    let schema = backend.parquet_metadata(
-        source.id,
-        ParquetRequest::new(ParquetSection::Schema, 0)?,
-        Cancellation::default(),
-    )?;
-    assert_eq!(schema.preview.rows, 1);
     Ok(())
 }
 

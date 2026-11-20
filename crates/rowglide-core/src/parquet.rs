@@ -26,8 +26,6 @@ pub enum ParquetSection {
     Schema,
     /// One record per row-group column chunk, including optional statistics.
     RowGroups,
-    /// Original file-level key/value bytes; neither key nor value is assumed to be UTF-8.
-    KeyValue,
 }
 
 /// Validated fixed-size metadata page, separate from user data pagination.

@@ -128,9 +128,6 @@ pub(crate) fn metadata_header(name: &str) -> SharedString {
         "stats_distinct_count" => tr!("metadata.stats_distinct_count"),
         "data_page_offset" => tr!("metadata.data_page_offset"),
         "dictionary_page_offset" => tr!("metadata.dictionary_page_offset"),
-        "entry" => tr!("metadata.entry"),
-        "key" => tr!("metadata.key"),
-        "value" => tr!("metadata.value"),
         _ => name.replace('_', " ").into(),
     }
 }

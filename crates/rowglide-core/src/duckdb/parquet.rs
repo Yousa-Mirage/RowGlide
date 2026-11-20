@@ -38,8 +38,8 @@ pub(super) fn summary(
 
 /// Read one metadata page with lookahead and an 8 MiB retained Arrow-buffer ceiling.
 /// Runs on a worker with an interrupt monitor. Limits bound returned data, while DuckDB
-/// still parses the file footer internally. Raw key/value blobs and optional statistics
-/// remain typed; oversized records fail explicitly rather than silently truncating values.
+/// still parses the file footer internally. Optional statistics remain typed; oversized
+/// records fail explicitly rather than silently truncating values.
 /// Schema pages omit the first (root) node before pagination, retaining original node IDs.
 pub(super) fn page(
     conn: &Connection,
@@ -54,14 +54,10 @@ pub(super) fn page(
         ParquetSection::RowGroups => {
             "SELECT row_group_id, path_in_schema, column_id, row_group_num_rows, row_group_num_columns, compression, encodings, total_compressed_size, total_uncompressed_size, num_values, stats_min_value, stats_max_value, min_is_exact, max_is_exact, stats_null_count, stats_distinct_count, data_page_offset, dictionary_page_offset FROM parquet_metadata(getvariable('source_path'))"
         }
-        ParquetSection::KeyValue => {
-            "SELECT row_number() OVER () AS entry, key, value FROM parquet_kv_metadata(getvariable('source_path'))"
-        }
     };
     let order = match request.section {
         ParquetSection::Schema => "node",
         ParquetSection::RowGroups => "row_group_id, column_id",
-        ParquetSection::KeyValue => "entry",
     };
     // Only static relation fragments are interpolated; offsets and paths remain bound values.
     let sql = format!("SELECT * FROM ({relation}) ORDER BY {order} LIMIT ? OFFSET ?");

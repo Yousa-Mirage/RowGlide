@@ -76,11 +76,11 @@
 
 - 打开 Parquet 时从 footer 获取准确源行数、row group 数量、文件大小、格式版本和写入程序信息，不依赖全表 COUNT。
 - 在状态栏以 Source 标识源行数和列数，与 Browse 范围及 SQL 结果分开展示。
-- 提供独立 File info 按钮及可调整宽度的右侧面板，包含 Overview、Schema、Row groups 和 Metadata 标签页。
+- 提供独立 File info 按钮及可调整宽度的右侧面板，包含 Overview、Schema 和 Row groups 标签页。
 - Schema 隐藏文件级 root 节点，展示实际字段；详情表格按可用空间分配列宽，并支持宽表横向滚动。
 - 文件大小按量级选择单位并保留一位小数；File info、SQL、Apply 和 Reset 使用一致的按钮风格。
 - Parquet 详情按需加载、独立分页，单页最多 100 条且保留 Arrow 缓冲区不超过 8 MiB；切换文件或关闭面板时取消过期请求。
-- 保留缺失统计的 null 语义、最小值/最大值精确性标记和 key/value 原始字节；详情单元格支持内容预览与完整值复制。
+- 保留 row-group 缺失统计的 null 语义及最小值/最大值精确性标记。
 - 详情请求拥有独立状态、取消与重试，不覆盖 Browse / SQL 的结果及错误。
 
 ### 文件外部变更检测

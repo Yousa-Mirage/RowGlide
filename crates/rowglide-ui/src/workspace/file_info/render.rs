@@ -26,7 +26,6 @@ impl Workspace {
             None => 0,
             Some(ParquetSection::Schema) => 1,
             Some(ParquetSection::RowGroups) => 2,
-            Some(ParquetSection::KeyValue) => 3,
         };
         let handle = resize_handle("file-info-divider", Axis::Horizontal)
             .inside(HandleEdge::Leading)
@@ -88,7 +87,6 @@ impl Workspace {
                             tr!("info.overview"),
                             tr!("info.schema"),
                             tr!("info.row_groups"),
-                            tr!("info.metadata"),
                         ]
                         .into_iter()
                         .enumerate()
@@ -113,7 +111,7 @@ impl Workspace {
                                             crate::workspace::actions::tab_destination(
                                                 &event.keystroke.key,
                                                 index,
-                                                4,
+                                                3,
                                             )
                                         {
                                             if next != index {
@@ -133,20 +131,15 @@ impl Workspace {
                         this.info_tabs_focus.focus(window, cx);
                     })),
             );
-        if section.is_none() {
-            return panel
-                .child(self.render_file_overview(cx))
-                .child(handle)
-                .into_any_element();
-        }
         let hint = match section {
-            Some(ParquetSection::Schema) => {
-                tr!("info.schema_hint")
+            None => {
+                return panel
+                    .child(self.render_file_overview(cx))
+                    .child(handle)
+                    .into_any_element();
             }
-            Some(ParquetSection::RowGroups) => {
-                tr!("info.groups_hint")
-            }
-            _ => tr!("info.metadata_hint"),
+            Some(ParquetSection::Schema) => tr!("info.schema_hint"),
+            Some(ParquetSection::RowGroups) => tr!("info.groups_hint"),
         };
         panel = panel.child(
             div()

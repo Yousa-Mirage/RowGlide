@@ -1,10 +1,8 @@
-//! Virtualized footer-detail table and lossless text/hex formatting for selected values.
+//! Virtualized footer-detail table and lossless formatting for selected values.
 
 use crate::i18n::{tr, tr_string};
 
-use arrow_array::{
-    Array, ArrayRef, BinaryArray, LargeBinaryArray, LargeStringArray, StringArray, StringViewArray,
-};
+use arrow_array::{Array, ArrayRef, LargeStringArray, StringArray, StringViewArray};
 use gpui_kit::component::{
     ActiveTheme,
     table::{Column, TableDelegate, TableState},
@@ -12,7 +10,7 @@ use gpui_kit::component::{
 use gpui_kit::*;
 use rowglide_core::{ParquetPage, QueryError};
 
-/// Retains only the visible metadata page; original Arrow buffers preserve nulls and blobs.
+/// Retains only the visible metadata page; original Arrow buffers preserve types and nulls.
 #[derive(Default)]
 pub(super) struct MetadataGrid {
     /// Current page, cleared before loading another section, source or offset.
@@ -151,7 +149,7 @@ impl TableDelegate for MetadataGrid {
         Some(self.label(row, col).into())
     }
 
-    /// Empty metadata is valid, particularly for custom key/value pairs and zero row groups.
+    /// Empty detail relations are valid, particularly for empty files and zero row groups.
     fn render_empty(
         &mut self,
         _: &mut Window,
@@ -169,7 +167,6 @@ impl TableDelegate for MetadataGrid {
 }
 
 /// Format a metadata value for preview or copying without changing its stored Arrow type.
-/// UTF-8 blobs display as text; other blobs use reversible 0x-prefixed hexadecimal.
 /// `limit` bounds preview characters and explicitly marks truncation; None copies the full value.
 pub(super) fn value_text(
     array: &ArrayRef,
@@ -181,37 +178,6 @@ pub(super) fn value_text(
     }
     if array.is_null(row) {
         return Ok("null".into());
-    }
-    let binary = array
-        .as_any()
-        .downcast_ref::<BinaryArray>()
-        .map(|array| array.value(row))
-        .or_else(|| {
-            array
-                .as_any()
-                .downcast_ref::<LargeBinaryArray>()
-                .map(|array| array.value(row))
-        });
-    if let Some(bytes) = binary {
-        return Ok(match std::str::from_utf8(bytes) {
-            Ok(text) => limited_text(text, limit),
-            Err(_) => {
-                let count = limit
-                    .map_or(bytes.len(), |limit| limit.saturating_sub(2) / 2)
-                    .min(bytes.len());
-                const HEX: &[u8; 16] = b"0123456789abcdef";
-                let mut text = String::with_capacity(2 + count * 2 + 3);
-                text.push_str("0x");
-                for byte in &bytes[..count] {
-                    text.push(HEX[(byte >> 4) as usize] as char);
-                    text.push(HEX[(byte & 0x0f) as usize] as char);
-                }
-                if count < bytes.len() {
-                    text.push('…');
-                }
-                text
-            }
-        });
     }
     let string = array
         .as_any()
@@ -254,26 +220,19 @@ pub(super) fn limited_text(text: &str, limit: Option<usize>) -> String {
 #[cfg(test)]
 mod tests {
     use super::value_text;
-    use arrow_array::{ArrayRef, BinaryArray};
+    use arrow_array::{ArrayRef, StringArray};
     use rowglide_core::QueryError;
     use std::sync::Arc;
 
-    /// Previews are bounded, while copying preserves full Unicode text, arbitrary bytes and nulls.
+    /// Previews are bounded, while copying preserves full Unicode text, empty strings and nulls.
     #[test]
-    fn binary_values_and_full_copy() -> Result<(), QueryError> {
-        let array: ArrayRef = Arc::new(BinaryArray::from(vec![
-            Some("中文内容".as_bytes()),
-            Some(&[0xff, 0x00, 0x01][..]),
-            Some(&[][..]),
-            None,
-        ]));
+    fn detail_text_preview_and_full_copy() -> Result<(), QueryError> {
+        let array: ArrayRef = Arc::new(StringArray::from(vec![Some("中文内容"), Some(""), None]));
         assert_eq!(value_text(&array, 0, Some(2))?, "中文…");
         assert_eq!(value_text(&array, 0, None)?, "中文内容");
-        assert_eq!(value_text(&array, 1, Some(4))?, "0xff…");
-        assert_eq!(value_text(&array, 1, None)?, "0xff0001");
-        assert_eq!(value_text(&array, 2, None)?, "");
-        assert_eq!(value_text(&array, 3, None)?, "null");
-        assert!(value_text(&array, 4, None).is_err());
+        assert_eq!(value_text(&array, 1, None)?, "");
+        assert_eq!(value_text(&array, 2, None)?, "null");
+        assert!(value_text(&array, 3, None).is_err());
         Ok(())
     }
 }

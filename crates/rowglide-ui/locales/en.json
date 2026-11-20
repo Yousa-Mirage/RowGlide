@@ -52,11 +52,9 @@
     "overview": "Overview",
     "schema": "Schema",
     "row_groups": "Row groups",
-    "metadata": "Metadata",
     "schema_hint": "Root omitted; nested groups retained in original order. Child counts describe nesting.",
     "groups_hint": "One row per column chunk. null means not recorded; check min/max exactness flags.",
-    "metadata_hint": "Original key/value bytes. Valid UTF-8 is shown as text; other bytes as 0x hex.",
-    "loading": "Loading metadata…",
+    "loading": "Loading details…",
     "wait": "May wait for the current data query.",
     "preview": "Selected value · preview",
     "copy": "Copy full value",
@@ -69,8 +67,8 @@
     "creator": "Created by",
     "unknown": "Unknown",
     "note": "Source facts captured when opened. Filters and SQL do not change these counts. Keep the file unchanged while it is open. Compression and statistics are listed per column chunk under Row groups.",
-    "no_entries": "No metadata entries",
-    "cell_missing": "Metadata cell is no longer available",
+    "no_entries": "No detail rows",
+    "cell_missing": "Detail cell is no longer available",
     "entries": "Entries %{start}–%{end}",
     "fields": "%{count} top-level fields",
     "source_counts": "Source %{rows} rows · %{columns} columns",
@@ -173,16 +171,13 @@
     "stats_null_count": "stats null count",
     "stats_distinct_count": "stats distinct count",
     "data_page_offset": "data page offset",
-    "dictionary_page_offset": "dictionary page offset",
-    "entry": "entry",
-    "key": "key",
-    "value": "value"
+    "dictionary_page_offset": "dictionary page offset"
   },
   "a11y": {
     "data_table": "Query results",
     "filter": "Browse filter",
     "sql_editor": "SQL query",
-    "metadata_table": "Parquet metadata",
+    "metadata_table": "Parquet details",
     "toggle_node": "Expand or collapse %{name}"
   },
   "filters": {

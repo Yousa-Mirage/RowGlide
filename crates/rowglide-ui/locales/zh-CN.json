@@ -52,11 +52,9 @@
     "overview": "概览",
     "schema": "结构",
     "row_groups": "行组",
-    "metadata": "元数据",
     "schema_hint": "已隐藏根节点；嵌套组按原始顺序保留。子节点数表示嵌套关系。",
     "groups_hint": "每行对应一个列块。null 表示未记录；请留意最小值和最大值的精确性标记。",
-    "metadata_hint": "保留原始键值字节。有效 UTF-8 显示为文本，其他字节显示为 0x 十六进制。",
-    "loading": "正在加载元数据…",
+    "loading": "正在加载详情…",
     "wait": "可能需要等待当前数据查询完成。",
     "preview": "选中值 · 预览",
     "copy": "复制完整值",
@@ -69,8 +67,8 @@
     "creator": "创建工具",
     "unknown": "未知",
     "note": "此处为打开文件时读取的源文件信息。筛选和 SQL 不会改变这些计数。文件打开期间请勿修改。各列块的压缩方式和统计信息位于“行组”中。",
-    "no_entries": "没有元数据记录",
-    "cell_missing": "元数据单元格已不可用",
+    "no_entries": "没有详情行",
+    "cell_missing": "详情单元格已不可用",
     "entries": "记录 %{start}–%{end}",
     "fields": "%{count} 个顶层字段",
     "source_counts": "源文件 %{rows} 行 · %{columns} 列",
@@ -173,16 +171,13 @@
     "stats_null_count": "空值数",
     "stats_distinct_count": "不同值数",
     "data_page_offset": "数据页偏移量",
-    "dictionary_page_offset": "字典页偏移量",
-    "entry": "条目",
-    "key": "键",
-    "value": "值"
+    "dictionary_page_offset": "字典页偏移量"
   },
   "a11y": {
     "data_table": "查询结果",
     "filter": "浏览筛选",
     "sql_editor": "SQL 查询",
-    "metadata_table": "Parquet 元信息",
+    "metadata_table": "Parquet 详情",
     "toggle_node": "展开或折叠 %{name}"
   },
   "filters": {
