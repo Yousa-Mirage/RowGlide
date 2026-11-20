@@ -68,6 +68,25 @@ impl Grid {
             .or_else(|| self.preview.as_ref().map(|preview| preview.schema.clone()))
     }
 
+    /// Build a fixed-width gutter outside the horizontally scrolling data cells.
+    /// Size both header and body from the retained row count, including streamed SQL rows.
+    fn number_gutter(&self, label: SharedString, cx: &App) -> Div {
+        let digits = self.rows_count(cx).max(1).ilog10() + 1;
+        div()
+            .w(px(20. + 9. * digits.max(2) as f32))
+            .h_full()
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .justify_end()
+            .px_2()
+            .border_r_1()
+            .border_color(cx.theme().table_row_border)
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child(label)
+    }
+
     /// Resolve a retained Browse row or request a missing SQL batch asynchronously.
     /// Returned batches share Arrow buffers; rendering never reads the disk file.
     pub(crate) fn row(&self, row: usize) -> Option<(RecordBatch, usize)> {
@@ -115,6 +134,30 @@ impl TableDelegate for Grid {
             || self.preview.as_ref().map_or(0, |p| p.rows),
             |state| state.rows,
         )
+    }
+
+    /// Prefix the header with a gutter instead of inserting a synthetic schema column.
+    fn render_header(
+        &mut self,
+        _: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Stateful<Div> {
+        div().id("header").child(self.number_gutter("#".into(), cx))
+    }
+
+    /// Number visible rows within this result; leave viewport filler rows unnumbered.
+    fn render_tr(
+        &mut self,
+        row: usize,
+        _: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Stateful<Div> {
+        let label = if row < self.rows_count(cx) {
+            (row + 1).to_string().into()
+        } else {
+            SharedString::default()
+        };
+        div().id(("row", row)).child(self.number_gutter(label, cx))
     }
 
     /// Build one header from its schema name, compact type label and current sort.

@@ -190,6 +190,9 @@ impl Workspace {
                 cx,
             )
             .cell_selectable(true)
+            .row_header(false)
+            // The number gutter is display-only; re-clicking a cell keeps it selected.
+            .row_selectable(false)
             .loop_selection(false)
             .col_movable(false)
         });
