@@ -2,6 +2,7 @@
 
 use super::{Edit, operator_label};
 use crate::{
+    cells,
     i18n::{tr, tr_string},
     workspace::{Workspace, state::FilterDraft},
 };
@@ -163,7 +164,13 @@ impl Workspace {
         let label = schema
             .fields()
             .get(column)
-            .map(|field| format!("{} · {}", field.name(), field.data_type()))
+            .map(|field| {
+                format!(
+                    "{} · {}",
+                    field.name(),
+                    cells::type_label(field.data_type())
+                )
+            })
             .unwrap_or_else(|| tr_string!("filters.column"));
         let weak = cx.entity().downgrade();
         let columns = Button::new(("filter-column", id))
@@ -179,13 +186,17 @@ impl Workspace {
                     }
                     let weak = weak.clone();
                     menu = menu.item(
-                        PopupMenuItem::new(format!("{} · {}", field.name(), field.data_type()))
-                            .checked(index == column)
-                            .on_click(move |_, window, cx| {
-                                let _ = weak.update(cx, |this, cx| {
-                                    this.edit_filter(source, id, Edit::Column(index), window, cx)
-                                });
-                            }),
+                        PopupMenuItem::new(format!(
+                            "{} · {}",
+                            field.name(),
+                            cells::type_label(field.data_type())
+                        ))
+                        .checked(index == column)
+                        .on_click(move |_, window, cx| {
+                            let _ = weak.update(cx, |this, cx| {
+                                this.edit_filter(source, id, Edit::Column(index), window, cx)
+                            });
+                        }),
                     );
                 }
                 menu
