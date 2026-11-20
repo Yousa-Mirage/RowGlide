@@ -171,17 +171,6 @@ impl Workspace {
                                     .text_color(cx.theme().muted_foreground)
                                     .child(tr!("welcome.no_recent"))
                             })),
-                    )
-                    .child(
-                        div()
-                            .px_3()
-                            .text_xs()
-                            .text_color(if self.error {
-                                cx.theme().red
-                            } else {
-                                cx.theme().muted_foreground
-                            })
-                            .child(self.status.clone()),
                     ),
             )
     }
