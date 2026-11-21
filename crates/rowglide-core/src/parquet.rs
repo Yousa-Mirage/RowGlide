@@ -1,6 +1,7 @@
 //! Engine-independent Parquet file summaries and bounded detail-page requests.
 
-use crate::{Preview, QueryError};
+use crate::QueryError;
+use arrow_schema::FieldRef;
 
 /// File-level footer information captured when a Parquet source is opened.
 /// Column count describes top-level Arrow fields, not flattened Parquet leaf columns.
@@ -41,10 +42,18 @@ impl ParquetRequest {
     }
 }
 
-/// One bounded, typed metadata page; missing statistics remain Arrow nulls.
+/// One logical field in file order; wrapper names used by Parquet encodings are absent.
+pub struct SchemaRow {
+    /// Original field, including its declared nullability and nested element types.
+    pub field: FieldRef,
+    /// Indentation level; top-level columns start at zero.
+    pub depth: usize,
+}
+
+/// A bounded page of user-visible fields in depth-first order.
 pub struct ParquetPage {
-    /// Up to PAGE_SIZE records and their metadata schema, including empty relations.
-    pub preview: Preview,
-    /// True only when lookahead observed another record after this page.
+    /// At most PAGE_SIZE fields, counted after removing encoding wrappers.
+    pub rows: Vec<SchemaRow>,
+    /// Whether another visible field follows this page.
     pub has_next: bool,
 }

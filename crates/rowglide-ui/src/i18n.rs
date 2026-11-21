@@ -65,6 +65,7 @@ pub(crate) fn query_error(error: &QueryError) -> String {
         QueryError::Cancelled => tr_string!("errors.cancelled"),
         QueryError::Data(source) => tr_string!("errors.arrow", error = source),
         QueryError::Io(source) => tr_string!("errors.io", error = source),
+        QueryError::Parquet(source) => tr_string!("errors.parquet", error = source),
         QueryError::DuckDb(source) => tr_string!("errors.duckdb", error = source),
         QueryError::Sql(source) => tr_string!("errors.sql", error = source),
         QueryError::CacheIo(source) => tr_string!("errors.cache", error = source),
@@ -91,26 +92,6 @@ fn filter_error(error: &rowglide_core::FilterError) -> String {
             index = index,
             error = filter_error(source)
         ),
-    }
-}
-
-/// Translate the fixed metadata relation headers without modifying names stored in cells.
-/// Unknown future columns retain a readable form of their original identifier.
-pub(crate) fn metadata_header(name: &str) -> SharedString {
-    match name {
-        "node" => tr!("metadata.node"),
-        "name" => tr!("metadata.name"),
-        "physical_type" => tr!("metadata.physical_type"),
-        "repetition_type" => tr!("metadata.repetition_type"),
-        "num_children" => tr!("metadata.num_children"),
-        "logical_type" => tr!("metadata.logical_type"),
-        "converted_type" => tr!("metadata.converted_type"),
-        "duckdb_type" => tr!("metadata.duckdb_type"),
-        "type_length" => tr!("metadata.type_length"),
-        "precision" => tr!("metadata.precision"),
-        "scale" => tr!("metadata.scale"),
-        "field_id" => tr!("metadata.field_id"),
-        _ => name.replace('_', " ").into(),
     }
 }
 

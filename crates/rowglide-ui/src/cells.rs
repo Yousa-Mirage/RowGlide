@@ -135,10 +135,16 @@ pub(crate) fn type_label(data_type: &arrow_schema::DataType) -> SharedString {
         DataType::Float16
         | DataType::Float32
         | DataType::Float64
+        | DataType::Decimal32(_, _)
+        | DataType::Decimal64(_, _)
         | DataType::Decimal128(_, _)
         | DataType::Decimal256(_, _) => tr!("types.decimal"),
         DataType::Boolean => tr!("types.boolean"),
-        DataType::List(_) | DataType::LargeList(_) | DataType::FixedSizeList(_, _) => {
+        DataType::List(_)
+        | DataType::LargeList(_)
+        | DataType::ListView(_)
+        | DataType::LargeListView(_)
+        | DataType::FixedSizeList(_, _) => {
             tr!("types.list")
         }
         DataType::Map(_, _) => tr!("types.map"),

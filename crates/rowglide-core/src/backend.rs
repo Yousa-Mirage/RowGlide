@@ -84,6 +84,9 @@ pub enum QueryError {
     /// DuckDB configuration, preparation or execution failed.
     #[error("DuckDB: {0}")]
     DuckDb(#[from] duckdb::Error),
+    /// Parquet footer decoding or logical schema conversion failed.
+    #[error("Parquet: {0}")]
+    Parquet(#[from] parquet::errors::ParquetError),
     /// User SQL could not be parsed before engine execution.
     #[error("Invalid SQL: {0}")]
     Sql(#[from] sqlparser::parser::ParserError),

@@ -1,16 +1,16 @@
 //! Virtualized footer-detail table and lossless formatting for selected values.
 
-use crate::i18n::{tr, tr_string};
+use crate::{cells, i18n::tr};
 
-use arrow_array::{Array, ArrayRef, LargeStringArray, StringArray, StringViewArray};
+use arrow_schema::DataType;
 use gpui_kit::component::{
     ActiveTheme,
     table::{Column, TableDelegate, TableState},
 };
 use gpui_kit::*;
-use rowglide_core::{ParquetPage, QueryError};
+use rowglide_core::ParquetPage;
 
-/// Retains only the visible metadata page; original Arrow buffers preserve types and nulls.
+/// Retains only the visible schema page, with original field types and nullability.
 #[derive(Default)]
 pub(super) struct MetadataGrid {
     /// Current page, cleared before loading another section, source or offset.
@@ -24,13 +24,7 @@ impl MetadataGrid {
     /// Widths are computed on table refresh, not on each rendered cell. Multiline
     /// values use their widest line; the column separately caps excessive widths.
     fn content_width(&self, column: usize, cx: &App) -> Pixels {
-        let header = self
-            .page
-            .as_ref()
-            .and_then(|page| page.preview.schema.fields().get(column))
-            .map_or_else(SharedString::default, |field| {
-                crate::i18n::metadata_header(field.name())
-            });
+        let header = header(column);
         let labels = std::iter::once(std::borrow::Cow::Borrowed(header.as_str())).chain(
             (0..self.rows_count(cx)).map(|row| std::borrow::Cow::Owned(self.label(row, column))),
         );
@@ -57,46 +51,46 @@ impl MetadataGrid {
         width
     }
 
-    /// Borrow one typed cell by page-local coordinates; stale/out-of-range selections are absent.
-    pub(super) fn cell(&self, row: usize, column: usize) -> Option<(&ArrayRef, usize)> {
-        let (batch, local) = self.page.as_ref()?.preview.row(row)?;
-        Some((batch.columns().get(column)?, local))
+    /// Return the displayed value without indentation for previews and clipboard copies.
+    pub(super) fn value(&self, row: usize, column: usize) -> Option<String> {
+        let field = &self.page.as_ref()?.rows.get(row)?.field;
+        Some(match column {
+            0 => field.name().clone(),
+            1 => detailed_type(field.data_type()),
+            2 if field.is_nullable() => tr!("metadata.yes").to_string(),
+            2 => tr!("metadata.no").to_string(),
+            _ => return None,
+        })
     }
 
-    /// Format one visible cell with bounded text; raw retained buffers remain unchanged.
+    /// Indent actual child names and bound the text shown inside the table.
     fn label(&self, row: usize, column: usize) -> String {
-        self.cell(row, column)
-            .map_or_else(String::new, |(array, local)| {
-                value_text(array, local, Some(160)).unwrap_or_else(|error| error.to_string())
-            })
+        let value = self.value(row, column).unwrap_or_default();
+        let mut text = limited_text(&value, Some(160));
+        if column == 0
+            && let Some(field) = self.page.as_ref().and_then(|p| p.rows.get(row))
+        {
+            text.insert_str(0, &"    ".repeat(field.depth));
+        }
+        text
     }
 }
 
 impl TableDelegate for MetadataGrid {
     /// Expose the page schema even when the metadata relation contains no records.
     fn columns_count(&self, _: &App) -> usize {
-        self.page
-            .as_ref()
-            .map_or(0, |page| page.preview.schema.fields().len())
+        3
     }
 
     /// Expose only retained metadata records, never source-data rows.
     fn rows_count(&self, _: &App) -> usize {
-        self.page.as_ref().map_or(0, |page| page.preview.rows)
+        self.page.as_ref().map_or(0, |page| page.rows.len())
     }
 
     /// Fit headers and current-page previews within readable width bounds.
     /// Wide relations remain horizontally scrollable; backend order defines pagination.
     fn column(&self, index: usize, cx: &App) -> Column {
-        let name = self
-            .page
-            .as_ref()
-            .and_then(|page| page.preview.schema.fields().get(index))
-            .map_or_else(
-                || tr!("common.unavailable"),
-                |field| crate::i18n::metadata_header(field.name()),
-            );
-        Column::new(format!("metadata-{index}"), name)
+        Column::new(format!("metadata-{index}"), header(index))
             .width((self.content_width(index, cx) + px(24.)).clamp(px(64.), px(320.)))
             .min_width(px(64.))
             .max_width(px(640.))
@@ -127,26 +121,17 @@ impl TableDelegate for MetadataGrid {
         _: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
-        let is_null = self
-            .cell(row, col)
-            .is_some_and(|(array, local)| array.is_null(local));
-        let color = if is_null {
-            cx.theme().muted_foreground
-        } else {
-            cx.theme().foreground
-        };
         div()
             .text_xs()
-            .text_color(color)
+            .text_color(cx.theme().foreground)
             .overflow_hidden()
             .text_ellipsis()
             .child(self.label(row, col))
     }
 
-    /// Return the same bounded label for keyboard and accessibility navigation.
+    /// Return the full logical value for keyboard and accessibility navigation.
     fn cell_label(&self, row: usize, col: usize, _: &App) -> Option<SharedString> {
-        self.cell(row, col)?;
-        Some(self.label(row, col).into())
+        self.value(row, col).map(Into::into)
     }
 
     /// Empty detail relations are valid, particularly for empty files.
@@ -166,42 +151,46 @@ impl TableDelegate for MetadataGrid {
     }
 }
 
-/// Format a metadata value for preview or copying without changing its stored Arrow type.
-/// `limit` bounds preview characters and explicitly marks truncation; None copies the full value.
-pub(super) fn value_text(
-    array: &ArrayRef,
-    row: usize,
-    limit: Option<usize>,
-) -> Result<String, QueryError> {
-    if row >= array.len() {
-        return Err(QueryError::Invalid(tr_string!("info.cell_missing")));
+/// Localized headers in logical schema column order.
+fn header(column: usize) -> SharedString {
+    match column {
+        0 => tr!("metadata.name"),
+        1 => tr!("metadata.data_type"),
+        2 => tr!("metadata.nullable"),
+        _ => SharedString::default(),
     }
-    if array.is_null(row) {
-        return Ok("null".into());
+}
+
+/// Describe logical types using the main grid vocabulary. A question mark inside a
+/// list describes the element, independently of the enclosing field's nullability.
+fn detailed_type(ty: &DataType) -> String {
+    let label = cells::type_label(ty);
+    match ty {
+        DataType::List(f)
+        | DataType::LargeList(f)
+        | DataType::ListView(f)
+        | DataType::LargeListView(f)
+        | DataType::FixedSizeList(f, _) => {
+            let size = if let DataType::FixedSizeList(_, n) = ty {
+                format!("; {n}")
+            } else {
+                String::new()
+            };
+            format!(
+                "{label}<{}{}{size}>",
+                detailed_type(f.data_type()),
+                if f.is_nullable() { "?" } else { "" }
+            )
+        }
+        DataType::Dictionary(_, value) => detailed_type(value),
+        DataType::Decimal32(p, s)
+        | DataType::Decimal64(p, s)
+        | DataType::Decimal128(p, s)
+        | DataType::Decimal256(p, s) => format!("{label}({p}, {s})"),
+        DataType::FixedSizeBinary(n) => format!("{}({n})", tr!("types.binary")),
+        _ if label == tr!("types.value") => ty.to_string(),
+        _ => label.to_string(),
     }
-    let string = array
-        .as_any()
-        .downcast_ref::<StringArray>()
-        .map(|array| array.value(row))
-        .or_else(|| {
-            array
-                .as_any()
-                .downcast_ref::<LargeStringArray>()
-                .map(|array| array.value(row))
-        })
-        .or_else(|| {
-            array
-                .as_any()
-                .downcast_ref::<StringViewArray>()
-                .map(|array| array.value(row))
-        });
-    if let Some(text) = string {
-        return Ok(limited_text(text, limit));
-    }
-    Ok(limited_text(
-        &arrow_cast::display::array_value_to_string(array.as_ref(), row)?,
-        limit,
-    ))
 }
 
 /// Truncate at a Unicode character boundary only for previews, with a visible ellipsis.
@@ -219,20 +208,22 @@ pub(super) fn limited_text(text: &str, limit: Option<usize>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::value_text;
-    use arrow_array::{ArrayRef, StringArray};
-    use rowglide_core::QueryError;
-    use std::sync::Arc;
+    use super::{DataType, detailed_type, tr};
+    use arrow_schema::Field;
 
-    /// Previews are bounded, while copying preserves full Unicode text, empty strings and nulls.
+    /// Render nullable elements and exact decimal parameters inside list types.
     #[test]
-    fn detail_text_preview_and_full_copy() -> Result<(), QueryError> {
-        let array: ArrayRef = Arc::new(StringArray::from(vec![Some("中文内容"), Some(""), None]));
-        assert_eq!(value_text(&array, 0, Some(2))?, "中文…");
-        assert_eq!(value_text(&array, 0, None)?, "中文内容");
-        assert_eq!(value_text(&array, 1, None)?, "");
-        assert_eq!(value_text(&array, 2, None)?, "null");
-        assert!(value_text(&array, 3, None).is_err());
-        Ok(())
+    fn nested_type_keeps_precision_and_element_nullability() {
+        for (nullable, suffix) in [(true, "?"), (false, "")] {
+            let element = Field::new("element", DataType::Decimal128(18, 2), nullable);
+            assert_eq!(
+                detailed_type(&DataType::List(element.into())),
+                format!(
+                    "{}<{}(18, 2){suffix}>",
+                    tr!("types.list"),
+                    tr!("types.decimal")
+                )
+            );
+        }
     }
 }

@@ -2,7 +2,7 @@
 
 use crate::i18n::tr;
 
-use super::{Workspace, table::limited_text, value_text};
+use super::{Workspace, table::limited_text};
 use crate::workspace::ResizePanel;
 use gpui_kit::component::{
     ActiveTheme, Disableable, Sizable,
@@ -177,10 +177,9 @@ impl Workspace {
             );
         }
         if let Some((row, col)) = self.file_info.selected
-            && let Some((array, local)) = grid.cell(row, col)
+            && let Some(value) = grid.value(row, col)
         {
-            let text =
-                value_text(array, local, Some(2000)).unwrap_or_else(|error| error.to_string());
+            let text = limited_text(&value, Some(2000));
             panel = panel.child(
                 div()
                     .border_t_1()
@@ -214,7 +213,7 @@ impl Workspace {
             );
         }
         let offset = self.active_tab().info.offset;
-        let rows = grid.page.as_ref().map_or(0, |page| page.preview.rows);
+        let rows = grid.page.as_ref().map_or(0, |page| page.rows.len());
         let label = if grid.loading {
             tr!("common.loading")
         } else if self.file_info.error.is_some() {

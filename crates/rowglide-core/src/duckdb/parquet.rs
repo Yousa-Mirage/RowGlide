@@ -1,6 +1,6 @@
 //! Parquet view registration, footer summaries and bounded metadata reads via DuckDB.
 
-use crate::{Cancellation, ParquetPage, ParquetRequest, ParquetSummary, Preview, QueryError};
+use crate::{Cancellation, ParquetPage, ParquetRequest, ParquetSummary, QueryError, SchemaRow};
 use duckdb::Connection;
 
 /// Bind the already parameterized source path to the connection-local data view.
@@ -33,56 +33,70 @@ pub(super) fn summary(
     ))
 }
 
-/// Read one metadata page with lookahead and an 8 MiB retained Arrow-buffer ceiling.
-/// Runs on a worker with an interrupt monitor. Limits bound returned data, while DuckDB
-/// still parses the file footer internally. Optional statistics remain typed; oversized
-/// records fail explicitly rather than silently truncating values.
-/// Schema pages omit the first (root) node before pagination, retaining original node IDs.
+/// Decode the footer's logical Arrow schema without reading data pages. DuckDB's query
+/// result schema can mark required fields nullable, so it cannot supply this detail.
 pub(super) fn page(
-    conn: &Connection,
+    path: &std::path::Path,
     request: ParquetRequest,
     cancel: &Cancellation,
 ) -> Result<ParquetPage, QueryError> {
-    // Skip by position, not name: actual fields may also be named root or schema.
-    let relation = "SELECT row_number() OVER () AS node, name, type AS physical_type, repetition_type, num_children, logical_type, converted_type, duckdb_type, type_length, precision, scale, field_id FROM parquet_schema(getvariable('source_path')) QUALIFY node > 1";
-    let order = "node";
-    // Only static relation fragments are interpolated; offsets and paths remain bound values.
-    let sql = format!("SELECT * FROM ({relation}) ORDER BY {order} LIMIT ? OFFSET ?");
-    let mut statement = conn.prepare(&sql)?;
-    let stream = statement.stream_arrow([
-        (ParquetRequest::PAGE_SIZE + 1) as i64,
-        request.offset() as i64,
-    ])?;
-    let schema = stream.get_schema();
-    let mut batches = Vec::new();
-    let mut rows = 0;
-    let mut bytes = 0usize;
-    let mut has_next = false;
-    for batch in stream {
+    use parquet::arrow::arrow_reader::ArrowReaderMetadata;
+    let file = std::fs::File::open(path)?;
+    let metadata = ArrowReaderMetadata::load(&file, Default::default())?;
+    let mut rows = Vec::new();
+    let mut skip = request.offset();
+    let mut bytes = 0_usize;
+    let mut levels = vec![metadata.schema().fields().iter()];
+    while let Some(level) = levels.last_mut() {
         cancel.check()?;
-        let batch = batch?;
-        bytes = bytes.saturating_add(batch.get_array_memory_size());
-        if bytes > 8 * 1024 * 1024 {
-            return Err(QueryError::Invalid(
-                "Parquet metadata page exceeds the 8 MiB memory budget".into(),
-            ));
+        let Some(field) = level.next() else {
+            levels.pop();
+            continue;
+        };
+        if skip > 0 {
+            skip -= 1;
+        } else {
+            if rows.len() == ParquetRequest::PAGE_SIZE {
+                return Ok(ParquetPage {
+                    rows,
+                    has_next: true,
+                });
+            }
+            bytes = bytes.saturating_add(field.size());
+            if bytes > 8 * 1024 * 1024 {
+                return Err(QueryError::Invalid(
+                    "Parquet schema page exceeds the 8 MiB memory budget".into(),
+                ));
+            }
+            rows.push(SchemaRow {
+                field: field.clone(),
+                depth: levels.len() - 1,
+            });
         }
-        let retained = batch.num_rows().min(ParquetRequest::PAGE_SIZE - rows);
-        has_next |= retained < batch.num_rows();
-        if retained > 0 {
-            batches.push(batch.slice(0, retained));
-            rows += retained;
+        if let Some(children) = named_children(field.data_type()) {
+            levels.push(children.iter());
         }
     }
-    cancel.check()?;
     Ok(ParquetPage {
-        preview: Preview {
-            schema,
-            batches,
-            rows,
-            total_rows: None,
-            truncated: false,
-        },
-        has_next,
+        rows,
+        has_next: false,
     })
+}
+
+/// Descend through element and map-entry wrappers until genuine named children are found.
+fn named_children(mut ty: &arrow_schema::DataType) -> Option<&arrow_schema::Fields> {
+    use arrow_schema::DataType::*;
+    loop {
+        ty = match ty {
+            Struct(fields) => return Some(fields),
+            List(f)
+            | LargeList(f)
+            | ListView(f)
+            | LargeListView(f)
+            | FixedSizeList(f, _)
+            | Map(f, _) => f.data_type(),
+            Dictionary(_, value) => value,
+            _ => return None,
+        };
+    }
 }

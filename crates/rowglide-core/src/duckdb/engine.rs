@@ -305,7 +305,7 @@ impl Backend for DuckDbBackend {
     }
 
     /// Inspect one bounded footer relation under the same engine gate as data queries.
-    /// Uses its own cancellation token and connection, so detail failures do not replace
+    /// Uses its own cancellation token and footer reader, so detail failures do not replace
     /// user data. Fingerprint checks reject details from an externally changed source.
     fn parquet_metadata(
         &self,
@@ -326,11 +326,7 @@ impl Backend for DuckDbBackend {
         }
         let _guard = lock_engine(&self.gate, &cancel)?;
         file.ensure_current()?;
-        let temp = crate::temporary::Directory::create()?;
-        let conn = connection(temp.path())?;
-        let _interrupt = stream::Interrupt::new(&conn, cancel.clone())?;
-        register(&conn, &file.path, file.info.format)?;
-        let result = parquet::page(&conn, request, &cancel);
+        let result = parquet::page(&file.path, request, &cancel);
         cancel.check()?;
         file.ensure_current()?;
         result

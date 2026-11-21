@@ -21,6 +21,7 @@ arrow-cast.workspace = true
 serde_json.workspace = true
 arrow-schema.workspace = true
 arrow-ipc.workspace = true
+parquet.workspace = true
 
 [lints]
 workspace = true

@@ -9,7 +9,7 @@ use super::Workspace;
 use gpui_kit::component::table::{TableEvent, TableState};
 use gpui_kit::*;
 use rowglide_core::{Cancellation, ParquetRequest, Source};
-use table::{MetadataGrid, value_text};
+use table::MetadataGrid;
 
 /// Lightweight preferences saved independently for every file, separate from Browse/SQL mode.
 #[derive(Default)]
@@ -195,7 +195,7 @@ impl Workspace {
                         .delegate()
                         .page
                         .as_ref()
-                        .is_some_and(|page| page.preview.rows > 0)
+                        .is_some_and(|page| !page.rows.is_empty())
                     {
                         table.scroll_to_row(0, cx);
                         table.scroll_to_col(0, cx);
@@ -229,22 +229,12 @@ impl Workspace {
         self.refresh_file_info(cx);
     }
 
-    /// Copy the original metadata cell through the shared bounded background serializer.
-    /// Binary values use reversible hexadecimal; previews remain human-readable text.
+    /// Copy the full localized cell value, excluding visual indentation and truncation.
     fn copy_info_value(&mut self, cx: &mut Context<Self>) {
-        let target = self
-            .file_info
-            .selected
-            .and_then(|(row, col)| self.file_info.table.read(cx).delegate().cell(row, col))
-            .map(|(array, row)| crate::clipboard::CopyTarget::Cell(array.clone(), row));
-        if let Some(target) = target {
-            self.copy_cell(
-                crate::clipboard::CopyRequested::Cell {
-                    target,
-                    format: rowglide_core::CopyFormat::Value,
-                },
-                cx,
-            );
+        if let Some((row, col)) = self.file_info.selected
+            && let Some(text) = self.file_info.table.read(cx).delegate().value(row, col)
+        {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
     }
 }

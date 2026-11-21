@@ -49,7 +49,7 @@
     "tooltip": "Parquet 源文件属性与页脚元数据",
     "overview": "概览",
     "schema": "结构",
-    "schema_hint": "已隐藏根节点；嵌套组按原始顺序保留。子节点数表示嵌套关系。",
+    "schema_hint": "缩进表示子字段。列表元素类型后的 ? 表示元素可为空。",
     "loading": "正在加载详情…",
     "wait": "可能需要等待当前数据查询完成。",
     "preview": "选中值 · 预览",
@@ -63,7 +63,6 @@
     "creator": "创建工具",
     "unknown": "未知",
     "no_entries": "没有详情行",
-    "cell_missing": "详情单元格已不可用",
     "entries": "记录 %{start}–%{end}",
     "source_counts": "源文件 %{rows} 行 · %{columns} 列",
     "not_recorded": "未记录"
@@ -122,7 +121,8 @@
     "sql": "SQL 错误：%{error}",
     "cache": "结果缓存错误：%{error}",
     "cache_read": "无法读取缓存结果：%{error}",
-    "open_window": "无法打开窗口：%{error}"
+    "open_window": "无法打开窗口：%{error}",
+    "parquet": "Parquet: %{error}"
   },
   "memory": {
     "gib": "内存 %{value} GiB",
@@ -144,22 +144,15 @@
     "date": "日期",
     "timestamp": "时间戳",
     "object": "对象",
-    "value": "值"
+    "value": "值",
+    "binary": "二进制"
   },
   "metadata": {
-    "node": "节点",
-    "name": "名称",
-    "physical_type": "物理类型",
-    "repetition_type": "重复类型",
-    "num_children": "子节点数",
-    "logical_type": "逻辑类型",
-    "converted_type": "转换类型",
-    "duckdb_type": "DuckDB 类型",
-    "type_length": "类型长度",
-    "precision": "精度",
-    "scale": "小数位数",
-    "field_id": "字段 ID",
-    "dictionary_page_offset": "字典页偏移量"
+    "name": "列名",
+    "data_type": "数据类型",
+    "nullable": "可为空",
+    "yes": "是",
+    "no": "否"
   },
   "a11y": {
     "data_table": "查询结果",

@@ -1,17 +1,17 @@
 //! Real Parquet footer inspection, typed metadata paging and error boundaries.
 
-use arrow_array::{Array, Int64Array, StringArray};
+use arrow_schema::DataType;
 use duckdb::Connection;
 use rowglide_core::{Backend, Cancellation, DuckDbBackend, ParquetRequest, QueryError};
 use std::{error::Error, fs};
 
 /// Inspect nested schema and exact footer totals independently of query results.
 #[test]
-fn summary_schema_and_column_chunks() -> Result<(), Box<dyn Error>> {
+fn logical_schema_and_footer_summary() -> Result<(), Box<dyn Error>> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("nested ' data.parquet");
     let conn = Connection::open_in_memory()?;
-    conn.execute("COPY (SELECT i AS id, [i, NULL] AS items, {'value': i} AS root FROM range(5000) t(i)) TO ? (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 2048)", [path.to_string_lossy().as_ref()])?;
+    conn.execute("COPY (SELECT i AS id, [i, NULL] AS items, [{'list': i, 'element': i}] AS root FROM range(5000) t(i)) TO ? (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 2048)", [path.to_string_lossy().as_ref()])?;
     let backend = DuckDbBackend::default();
     let source = backend.open(&path, Cancellation::default())?;
     assert_eq!(source.rows, Some(5000));
@@ -21,26 +21,21 @@ fn summary_schema_and_column_chunks() -> Result<(), Box<dyn Error>> {
     assert!(summary.created_by.is_some());
     let schema =
         backend.parquet_metadata(source.id, ParquetRequest::new(0)?, Cancellation::default())?;
-    let mut names = Vec::new();
-    for batch in &schema.preview.batches {
-        let column = batch.schema().index_of("name")?;
-        let values = batch
-            .column(column)
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .ok_or("Expected schema names")?;
-        names.extend(values.iter().flatten().map(str::to_owned));
-    }
-    // Only the enclosing root is omitted; a field named root and nested groups survive.
-    assert_eq!(names, ["id", "items", "list", "element", "root", "value"]);
+    let names = schema
+        .rows
+        .iter()
+        .map(|row| row.field.name().as_str())
+        .collect::<Vec<_>>();
+    // List encoding wrappers are absent; genuine struct children remain visible.
+    assert_eq!(names, ["id", "items", "root", "list", "element"]);
+    let depths: Vec<_> = schema.rows.iter().map(|r| r.depth).collect();
+    assert_eq!(depths, [0, 0, 0, 1, 1]);
+    let DataType::List(element) = schema.rows[1].field.data_type() else {
+        return Err("Expected a logical list".into());
+    };
+    assert_eq!(element.data_type(), &DataType::Int64);
+    assert!(element.is_nullable());
     assert!(!schema.has_next);
-    assert!(
-        schema
-            .preview
-            .schema
-            .field_with_name("repetition_type")
-            .is_ok()
-    );
     Ok(())
 }
 
@@ -62,7 +57,7 @@ fn wide_schema_paging_and_empty_file() -> Result<(), Box<dyn Error>> {
     let source = backend.open(&path, Cancellation::default())?;
     assert_eq!(source.rows, Some(0));
     assert_eq!(source.parquet.ok_or("Missing summary")?.columns, 205);
-    let mut nodes = Vec::new();
+    let mut names = Vec::new();
     for offset in [0, 100, 200] {
         let page = backend.parquet_metadata(
             source.id,
@@ -70,17 +65,10 @@ fn wide_schema_paging_and_empty_file() -> Result<(), Box<dyn Error>> {
             Cancellation::default(),
         )?;
         assert_eq!(page.has_next, offset < 200);
-        assert_eq!(page.preview.rows, if offset < 200 { 100 } else { 5 });
-        for batch in page.preview.batches {
-            let ids = batch
-                .column(0)
-                .as_any()
-                .downcast_ref::<Int64Array>()
-                .ok_or("Missing node IDs")?;
-            nodes.extend(ids.values().iter().copied());
-        }
+        assert_eq!(page.rows.len(), if offset < 200 { 100 } else { 5 });
+        names.extend(page.rows.into_iter().map(|row| row.field.name().clone()));
     }
-    assert_eq!(nodes, (2..=206).collect::<Vec<_>>());
+    assert_eq!(names, (0..205).map(|i| format!("c{i}")).collect::<Vec<_>>());
     Ok(())
 }
 
@@ -180,5 +168,42 @@ fn waiting_metadata_cancels_without_cancelling_data_query() -> Result<(), Box<dy
             .parquet_metadata(source.id, request, Cancellation::default())
             .is_ok()
     );
+    Ok(())
+}
+
+/// Required lists can contain nullable items and nullable lists can require their items.
+#[test]
+fn list_nullability_is_independent_of_element_nullability() -> Result<(), Box<dyn Error>> {
+    use arrow_schema::{Field, Schema};
+    use parquet::arrow::ArrowWriter;
+    use std::sync::Arc;
+
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("declared.parquet");
+    let schema = Schema::new(
+        [false, true]
+            .into_iter()
+            .map(|optional| {
+                Field::new(
+                    if optional { "optional" } else { "required" },
+                    DataType::List(Field::new("element", DataType::Utf8, !optional).into()),
+                    optional,
+                )
+            })
+            .collect::<Vec<_>>(),
+    );
+    ArrowWriter::try_new(fs::File::create(&path)?, Arc::new(schema), None)?.close()?;
+    let backend = DuckDbBackend::default();
+    let source = backend.open(&path, Cancellation::default())?;
+    let page =
+        backend.parquet_metadata(source.id, ParquetRequest::new(0)?, Cancellation::default())?;
+    assert_eq!(page.rows.len(), 2);
+    for (row, optional) in page.rows.iter().zip([false, true]) {
+        assert_eq!(row.field.is_nullable(), optional);
+        let DataType::List(element) = row.field.data_type() else {
+            return Err("Expected a logical list".into());
+        };
+        assert_eq!(element.is_nullable(), !optional);
+    }
     Ok(())
 }

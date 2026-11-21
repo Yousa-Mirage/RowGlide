@@ -16,6 +16,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 arrow-array = "60"
 arrow-cast = "60"
 arrow-ipc = "60"
+parquet = { version = "60", default-features = false, features = ["arrow"] }
 arrow-schema = "60"
 async-channel = "2.5"
 argh = { version = "0.1", default-features = false, features = ["help"] }
