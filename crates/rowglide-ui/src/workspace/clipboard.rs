@@ -27,7 +27,7 @@ impl Drop for ClipboardState {
 }
 
 impl Workspace {
-    /// Resolve the captured cell asynchronously and serialize on a background executor.
+    /// Resolve the captured cell or rectangle and serialize on a background executor.
     /// Only successful complete output reaches the clipboard. Missing SQL batches are
     /// awaited for up to 30 seconds through an independent reply, with no polling.
     /// Superseding requests cancel the previous worker and completion task.
@@ -38,35 +38,38 @@ impl Workspace {
         self.clipboard.message = Some(tr_string!("copy.loading"));
         let cancel = self.clipboard.cancel.clone();
         self.clipboard.task = Some(cx.spawn(async move |this, cx| {
-            let resolved = tokio::select! {
+            let worker_cancel = cancel.clone();
+            let worker = cx.background_executor().spawn(async move {
+                match request {
+                    CopyRequested::Cell { target, format } => {
+                        let (array, row) = target.resolve(&worker_cancel).await?;
+                        serialize_cell(
+                            array.as_ref(),
+                            row,
+                            format,
+                            CopyLimits::default(),
+                            &worker_cancel,
+                        )
+                    }
+                    CopyRequested::Range(range, format) => {
+                        range.serialize(format, &worker_cancel).await
+                    }
+                }
+            });
+            let outcome = tokio::select! {
                 biased;
-                _ = cancel.cancelled() => Err(CopyError::from(rowglide_core::QueryError::Cancelled)),
-                result = request.target.resolve(&cancel) => result,
-                _ = cx.background_executor().timer(Duration::from_secs(30)) => {
-                    Err(CopyError::Invalid(tr_string!("copy.timeout")))
-                }
-            };
-            let outcome = match resolved {
-                Ok((array, row)) => {
-                    let worker_cancel = cancel.clone();
-                    cx.background_executor()
-                        .spawn(async move {
-                            serialize_cell(
-                                array.as_ref(),
-                                row,
-                                request.format,
-                                CopyLimits::default(),
-                                &worker_cancel,
-                            )
-                        })
-                        .await
-                }
-                Err(error) => Err(error),
+                _ = cancel.cancelled() => return,
+                result = worker => Some(result),
+                _ = cx.background_executor().timer(Duration::from_secs(30)) => None,
             };
             let _ = this.update(cx, |this, cx| {
                 if cancel.check().is_err() {
                     return;
                 }
+                let outcome = outcome.unwrap_or_else(|| {
+                    cancel.cancel();
+                    Err(CopyError::Invalid(tr_string!("copy.timeout")))
+                });
                 this.clipboard.message = Some(match outcome {
                     Ok(text) => {
                         cx.write_to_clipboard(ClipboardItem::new_string(text));

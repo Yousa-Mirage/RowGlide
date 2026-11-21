@@ -214,6 +214,7 @@ impl Workspace {
         self.expanded.clear();
 
         self.table.update(cx, |table, cx| {
+            table.delegate_mut().clear_cell_range();
             table.clear_selection(cx);
             table.delegate_mut().visible = None;
             table.delegate_mut().clear_headers();
@@ -318,6 +319,7 @@ impl Workspace {
                         let widths = this.active_tab().browse_result.widths.clone();
                         let empty_label = this.browse_empty_label(&candidate);
                         this.table.update(cx, |table, cx| {
+                            table.delegate_mut().clear_cell_range();
                             table.clear_selection(cx);
                             let grid = table.delegate_mut();
                             grid.empty_label = empty_label;
@@ -467,6 +469,7 @@ impl Workspace {
         let empty_label = self.browse_empty_label(&self.query);
         self.table.update(cx, |table, cx| {
             let grid = table.delegate_mut();
+            grid.clear_cell_range();
             grid.visible = visible;
             grid.clear_headers();
             grid.view_id += 1;

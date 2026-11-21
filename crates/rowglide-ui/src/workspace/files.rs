@@ -93,6 +93,7 @@ impl Workspace {
             self.pending_cell = None;
             self.expanded.clear();
             self.table.update(cx, |table, cx| {
+                table.delegate_mut().clear_cell_range();
                 table.clear_selection(cx);
                 let grid = table.delegate_mut();
                 grid.visible = None;

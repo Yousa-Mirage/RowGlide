@@ -239,7 +239,7 @@ impl Workspace {
             .map(|(array, row)| crate::clipboard::CopyTarget::Cell(array.clone(), row));
         if let Some(target) = target {
             self.copy_cell(
-                crate::clipboard::CopyRequested {
+                crate::clipboard::CopyRequested::Cell {
                     target,
                     format: rowglide_core::CopyFormat::Value,
                 },

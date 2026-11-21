@@ -6,7 +6,10 @@ pub(crate) mod sizing;
 use crate::i18n::{tr, tr_string};
 
 use crate::cells;
-use crate::clipboard::{CopyTarget, copy_menu};
+use crate::clipboard::{
+    CopyTarget, copy_menu,
+    range::{CellRange, RangeCopy},
+};
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use gpui_kit::component::{
@@ -33,6 +36,10 @@ pub(crate) struct SortRequested(pub(crate) Option<Sort>);
 /// The delegate exposes rows, columns and visible-cell summaries to the virtualized
 /// table. Cache misses enqueue bounded background reads without doing file I/O here.
 pub(crate) struct Grid {
+    /// Display coordinates of the current pointer selection, scoped to this result and layout.
+    pub(crate) cell_range: Option<CellRange>,
+    /// True between a left press on a data cell and its release.
+    pub(crate) dragging_cells: bool,
     /// Visible schema indices in source order; None displays every column.
     pub(crate) visible: Option<Vec<usize>>,
     /// Selected visible fields in schema order, independent of the selected data cell.
@@ -82,6 +89,12 @@ pub(crate) struct ColumnVisibility {
 impl EventEmitter<ColumnVisibility> for GridEvents {}
 
 impl Grid {
+    /// Release both corners and ignore pointer motion until the next cell press.
+    pub(crate) fn clear_cell_range(&mut self) {
+        self.cell_range = None;
+        self.dragging_cells = false;
+    }
+
     /// Return the active result schema, including an empty SQL query's schema.
     pub(crate) fn schema(&self) -> Option<SchemaRef> {
         self.sql_snapshot
@@ -319,19 +332,80 @@ impl TableDelegate for Grid {
 
         let target = self.copy_target(row, col);
         let events = self.events.clone();
+        let table = cx.weak_entity();
+        let selected = self
+            .cell_range
+            .is_some_and(|range| range.includes(row, col));
 
         div()
             .id(SharedString::from(format!("cell-{row}-{col}")))
             .size_full()
             .text_sm()
-            .when(self.header_columns.contains(&source), |cell| {
+            .when(selected || self.header_columns.contains(&source), |cell| {
                 cell.bg(cx.theme().table_active)
             })
             .text_color(color)
             .overflow_hidden()
             .text_ellipsis()
             .child(value)
-            .context_menu(move |menu, _, _| copy_menu(menu, target.clone(), events.clone()))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |table, event: &MouseDownEvent, window, cx| {
+                    let point = (row, col);
+                    let anchor = if event.modifiers.shift {
+                        table
+                            .delegate()
+                            .cell_range
+                            .map(|r| r.anchor)
+                            .or_else(|| table.selected_cell())
+                            .unwrap_or(point)
+                    } else {
+                        point
+                    };
+                    let grid = table.delegate_mut();
+                    grid.clear_headers();
+                    grid.cell_range = Some(CellRange { anchor, end: point });
+                    grid.dragging_cells = true;
+                    table.focus_handle(cx).focus(window, cx);
+                    cx.notify();
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |table, _, _, cx| {
+                    if table
+                        .delegate()
+                        .cell_range
+                        .is_some_and(|r| !r.includes(row, col))
+                    {
+                        table.delegate_mut().clear_cell_range();
+                        cx.notify();
+                    }
+                }),
+            )
+            .on_mouse_move(cx.listener(move |table, event: &MouseMoveEvent, _, cx| {
+                let grid = table.delegate_mut();
+                if grid.dragging_cells
+                    && event.pressed_button == Some(MouseButton::Left)
+                    && let Some(range) = &mut grid.cell_range
+                    && range.end != (row, col)
+                {
+                    range.end = (row, col);
+                    cx.notify();
+                }
+            }))
+            .context_menu(move |menu, _, cx| {
+                let rectangle = table.upgrade().and_then(|table| {
+                    let grid = table.read(cx).delegate();
+                    grid.cell_range.filter(|r| r.includes(row, col))?;
+                    RangeCopy::capture(grid, cx)
+                });
+                if let Some(range) = rectangle {
+                    crate::clipboard::range_menu(menu, range, events.clone())
+                } else {
+                    copy_menu(menu, target.clone(), events.clone())
+                }
+            })
             .into_any_element()
     }
 

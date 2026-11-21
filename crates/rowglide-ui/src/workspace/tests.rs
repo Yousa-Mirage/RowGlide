@@ -775,3 +775,84 @@ async fn multiselect_header_actions(cx: &mut TestAppContext) {
     .await;
     assert!(outcome.is_ok(), "{outcome:?}");
 }
+
+/// Drag and Shift-click both select typed rectangles and publish the appropriate clipboard format.
+#[gpui_kit::test]
+async fn rectangular_cell_copy(cx: &mut TestAppContext) {
+    use crate::i18n::tr;
+    use gpui_kit::{
+        Modifiers, MouseButton,
+        test::{TestAppContextExt, TestEventExt, TestQueryExt},
+    };
+    let outcome = async {
+        let (handle, view) = fixture(cx)?;
+        for (drag, label, expected) in [
+            (
+                true,
+                tr!("copy.table"),
+                "id\tname\n10001\tOlivia Chen\n10002\tNoah Williams",
+            ),
+            (
+                false,
+                tr!("copy.json"),
+                r#"{"id":[10001,10002],"name":["Olivia Chen","Noah Williams"]}"#,
+            ),
+        ] {
+            cx.update_window(handle, |_, window, cx| {
+                window.render_frame(cx);
+                if drag {
+                    window.drag_to("table-cell-1:1", "table-cell-0:0", cx);
+                } else {
+                    window.click("table-cell-0:0", cx);
+                    window.click_with_modifiers(
+                        "table-cell-1:1",
+                        Modifiers {
+                            shift: true,
+                            ..Default::default()
+                        },
+                        cx,
+                    );
+                }
+                let range = view.read(cx).table.read(cx).delegate().cell_range;
+                assert!(
+                    range.is_some_and(|r| r.includes(0, 1) && r.includes(1, 0)),
+                    "drag={drag}"
+                );
+                window.right_click("table-cell-0:1", cx);
+                assert!(
+                    view.read(cx)
+                        .table
+                        .read(cx)
+                        .delegate()
+                        .cell_range
+                        .is_some_and(|r| r.includes(0, 1)),
+                    "after right click drag={drag}"
+                );
+            })?;
+            cx.wait_for(handle, std::time::Duration::from_secs(2), |w, _| {
+                w.try_find_by_label(&label).is_some()
+            })
+            .await;
+            cx.update_window(handle, |_, window, cx| {
+                assert!(
+                    window.try_find_by_label(&tr!("copy.value")).is_none(),
+                    "menu drag={drag}"
+                );
+                let point = window.find_by_label(&label).bounds().center();
+                window.pointer_move(point, None, cx);
+                window.pointer_down(point, MouseButton::Left, cx);
+                window.pointer_up(point, MouseButton::Left, cx);
+            })?;
+            cx.wait_for(handle, std::time::Duration::from_secs(2), |_, cx| {
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref()
+                    == Some(expected)
+            })
+            .await;
+        }
+        Ok::<(), Box<dyn std::error::Error>>(())
+    }
+    .await;
+    assert!(outcome.is_ok(), "{outcome:?}");
+}

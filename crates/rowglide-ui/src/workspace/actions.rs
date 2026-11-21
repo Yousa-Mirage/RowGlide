@@ -173,9 +173,19 @@ impl Workspace {
     /// Enter cell selection on the first arrow press; subsequent movement stays with TableState.
     /// The upstream table defaults back to row selection after clearing or replacing results.
     fn start_cell_navigation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.table.focus_handle(cx).is_focused(window)
-            && self.table.read(cx).selected_cell().is_none()
-        {
+        if !self.table.focus_handle(cx).is_focused(window) {
+            return;
+        }
+        if let Some(range) = self.table.read(cx).delegate().cell_range {
+            self.table.update(cx, |table, cx| {
+                table.delegate_mut().clear_cell_range();
+                if table.selected_cell() != Some(range.end) {
+                    table.set_selected_cell(range.end.0, range.end.1, cx);
+                }
+                cx.notify();
+            });
+        }
+        if self.table.read(cx).selected_cell().is_none() {
             if self.table.read(cx).delegate().copy_target(0, 0).is_some() {
                 self.table
                     .update(cx, |table, cx| table.set_selected_cell(0, 0, cx));
@@ -186,7 +196,15 @@ impl Workspace {
 
     /// Scope the main grid and initialize cell navigation before upstream arrow handlers run.
     pub(super) fn keyboard_grid(&self, cx: &mut Context<Self>) -> Div {
+        let table = self.table.clone();
+        let release = move |_: &MouseUpEvent, _: &mut Window, cx: &mut App| {
+            if table.read(cx).delegate().dragging_cells {
+                table.update(cx, |table, _| table.delegate_mut().dragging_cells = false);
+            }
+        };
         div()
+            .on_mouse_up(MouseButton::Left, release.clone())
+            .on_mouse_up_out(MouseButton::Left, release)
             .key_context("RowglideGrid")
             .capture_action(cx.listener(|this, _: &SelectDown, window, cx| {
                 this.start_cell_navigation(window, cx)
@@ -211,11 +229,15 @@ impl Workspace {
             return;
         }
         let table = self.table.read(cx);
+        if let Some(range) = crate::clipboard::range::RangeCopy::capture(table.delegate(), cx) {
+            self.copy_cell(CopyRequested::Range(range, format), cx);
+            return;
+        }
         let target = table
             .selected_cell()
             .and_then(|(row, col)| table.delegate().copy_target(row, col));
         if let Some(target) = target {
-            self.copy_cell(CopyRequested { target, format }, cx);
+            self.copy_cell(CopyRequested::Cell { target, format }, cx);
         }
     }
 
@@ -273,11 +295,16 @@ impl Workspace {
                 table.delegate_mut().clear_headers();
                 cx.notify();
             });
-        } else if !matches!(
-            self.table.read(cx).selection(),
-            component::table::TableSelection::None
-        ) {
-            self.table.update(cx, |table, cx| table.clear_selection(cx));
+        } else if self.table.read(cx).delegate().cell_range.is_some()
+            || !matches!(
+                self.table.read(cx).selection(),
+                component::table::TableSelection::None
+            )
+        {
+            self.table.update(cx, |table, cx| {
+                table.delegate_mut().clear_cell_range();
+                table.clear_selection(cx);
+            });
         } else {
             cx.propagate();
             return;

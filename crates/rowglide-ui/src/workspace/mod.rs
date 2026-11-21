@@ -183,6 +183,8 @@ impl Workspace {
                     view_id: 0,
                     header_columns: Default::default(),
                     header_anchor: None,
+                    cell_range: None,
+                    dragging_cells: false,
                     preview: None,
                     sql_result: None,
                     sql_snapshot: None,

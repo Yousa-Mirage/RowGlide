@@ -66,6 +66,7 @@ impl Grid {
                 }
                 let modifiers = click.modifiers();
                 let additive = modifiers.secondary(cx);
+                table.delegate_mut().clear_cell_range();
                 table.clear_selection(cx);
                 table
                     .delegate_mut()
@@ -86,6 +87,7 @@ impl Grid {
                     }
                     if !grid.header_columns.contains(&column) {
                         grid.select_header(display, false, false);
+                        state.delegate_mut().clear_cell_range();
                         state.clear_selection(cx);
                     }
                     let grid = state.delegate();

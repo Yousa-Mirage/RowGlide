@@ -1,5 +1,7 @@
 //! Immutable copy targets and menus shared by data cells and detail panels.
 
+pub(crate) mod range;
+
 use crate::i18n::{tr, tr_string};
 
 use crate::table::GridEvents;
@@ -42,11 +44,16 @@ impl CopyTarget {
 
 /// Explicit copy request carrying the original target and chosen serialization format.
 #[derive(Clone)]
-pub(crate) struct CopyRequested {
-    /// Captured data, retained through asynchronous cache reads and serialization.
-    pub(crate) target: CopyTarget,
-    /// Raw scalar text or JSON output chosen by the user.
-    pub(crate) format: CopyFormat,
+pub(crate) enum CopyRequested {
+    /// Original typed cell and its chosen serialization.
+    Cell {
+        /// Captured data, retained through asynchronous cache reads and serialization.
+        target: CopyTarget,
+        /// Raw scalar text or JSON output chosen by the user.
+        format: CopyFormat,
+    },
+    /// Selected rectangle and its TSV or column-oriented JSON representation.
+    Range(Arc<range::RangeCopy>, CopyFormat),
 }
 
 impl EventEmitter<CopyRequested> for GridEvents {}
@@ -68,10 +75,31 @@ pub(crate) fn copy_menu(
                 .disabled(target.is_none())
                 .on_click(move |_, _, cx| {
                     if let Some(target) = target.clone() {
-                        events.update(cx, |_, cx| cx.emit(CopyRequested { target, format }));
+                        events.update(cx, |_, cx| cx.emit(CopyRequested::Cell { target, format }));
                     }
                 }),
         );
+    }
+    menu
+}
+
+/// Offer only rectangular TSV and JSON formats for a captured multi-cell selection.
+pub(crate) fn range_menu(
+    mut menu: PopupMenu,
+    range: Arc<range::RangeCopy>,
+    events: Entity<GridEvents>,
+) -> PopupMenu {
+    for (label, format) in [
+        (tr!("copy.table"), CopyFormat::Value),
+        (tr!("copy.json"), CopyFormat::Json),
+    ] {
+        let range = range.clone();
+        let events = events.clone();
+        menu = menu.item(PopupMenuItem::new(label).on_click(move |_, _, cx| {
+            events.update(cx, |_, cx| {
+                cx.emit(CopyRequested::Range(range.clone(), format))
+            });
+        }));
     }
     menu
 }
@@ -147,6 +175,18 @@ mod sql_tests {
             thread::sleep(Duration::from_millis(5));
         }
         assert!(result.snapshot().disk_bytes > 0);
+        // The mock emits 256-row batches; this selection straddles the first boundary.
+        let range = super::range::RangeCopy::sql(
+            result.clone(),
+            vec![(0, "id".into()), (4, "active".into())],
+            255..=257,
+        );
+        let text = futures_lite::future::block_on(
+            range.serialize(CopyFormat::Json, &Cancellation::default()),
+        )?;
+        let json: serde_json::Value = serde_json::from_str(&text)?;
+        assert_eq!(json["id"], serde_json::json!([10256, 10257, 10258]));
+        assert!(json["active"][2].is_boolean());
         let target = CopyTarget::Sql(result.clone(), 0, 0);
         drop(result);
         let (array, row) =

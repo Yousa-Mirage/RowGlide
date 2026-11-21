@@ -87,12 +87,15 @@
     "close": "Close cell inspector"
   },
   "copy": {
+    "table": "Copy as table",
+    "duplicate_columns": "Selected column names must be unique to copy as JSON",
+    "range_limit": "Selection exceeds the clipboard size limit",
     "unavailable": "Copy column is unavailable",
     "value": "Copy value",
     "json": "Copy as JSON",
     "loading": "Copying…",
-    "timeout": "Timed out reading the cell from the SQL cache; retry copying",
-    "success": "Cell copied",
+    "timeout": "Copy timed out; try again",
+    "success": "Copied to clipboard",
     "failed": "Copy failed: %{error}"
   },
   "table": {

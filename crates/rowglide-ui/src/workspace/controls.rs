@@ -103,6 +103,7 @@ impl Workspace {
             }
             grid.visible = (columns.len() < count).then_some(columns);
             grid.clear_headers();
+            table.delegate_mut().clear_cell_range();
             table.clear_selection(cx);
             table.refresh(cx);
             cx.notify();

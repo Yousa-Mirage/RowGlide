@@ -87,12 +87,15 @@
     "close": "关闭单元格查看器"
   },
   "copy": {
+    "table": "复制为表格",
+    "duplicate_columns": "复制为 JSON 时，所选列名不能重复",
+    "range_limit": "所选内容超出剪贴板大小限制",
     "unavailable": "要复制的列不可用",
     "value": "复制值",
     "json": "复制为 JSON",
     "loading": "复制中…",
-    "timeout": "从 SQL 缓存读取单元格超时，请重试复制",
-    "success": "已复制单元格",
+    "timeout": "复制超时，请重试",
+    "success": "已复制到剪贴板",
     "failed": "复制失败：%{error}"
   },
   "table": {
