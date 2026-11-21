@@ -45,13 +45,13 @@ unused_qualifications = "deny"
 
 # Project-level information, not inherited Cargo package fields.
 [workspace.metadata.project]
-description = "A native Parquet and CSV data browser built with Rust and GPUI Kit"
+description = "A native Parquet data browser built with Rust and GPUI Kit"
 authors = ["Yousa-Mirage <Yousa-Mirage@foxmail.com>"]
 license = "Apache-2.0"
 repository = "https://github.com/Yousa-Mirage/RowGlide"
 homepage = "https://github.com/Yousa-Mirage/RowGlide"
 readme = "README.md"
-keywords = ["parquet", "csv", "arrow", "gpui", "data-viewer"]
+keywords = ["parquet", "arrow", "gpui", "data-viewer"]
 categories = ["visualization", "gui"]
 
 # Build configuration

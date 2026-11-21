@@ -90,9 +90,7 @@ impl DuckDbBackend {
             path.canonicalize()?
         };
         if !path.is_file() {
-            return Err(QueryError::Invalid(
-                "Select a regular CSV or Parquet file".into(),
-            ));
+            return Err(QueryError::Invalid("Select a regular Parquet file".into()));
         }
         let format = match path
             .extension()
@@ -104,7 +102,7 @@ impl DuckDbBackend {
             Some("csv") => "CSV",
             _ => {
                 return Err(QueryError::Invalid(
-                    "Supported file types: .parquet, .pq, .csv".into(),
+                    "Select a Parquet file (.parquet or .pq)".into(),
                 ));
             }
         };

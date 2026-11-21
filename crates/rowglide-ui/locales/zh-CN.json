@@ -4,7 +4,7 @@
     "subtitle": "打开文件，轻松探索数据。",
     "start": "开始使用",
     "recent": "最近文件",
-    "drop": "也可以将 Parquet 或 CSV 文件拖入此窗口。",
+    "drop": "也可以将 Parquet 文件拖入此窗口。",
     "no_recent": "打开过的文件会显示在这里。",
     "open_recent": "打开 %{path}"
   },
@@ -25,9 +25,9 @@
   },
   "files": {
     "changed_tab": "%{name} · 已变更",
-    "empty": "打开 Parquet 或 CSV 文件",
+    "empty": "打开 Parquet 文件",
     "open": "打开文件…",
-    "prompt": "打开 CSV 或 Parquet 文件",
+    "prompt": "打开 Parquet 文件",
     "inspecting": "正在读取文件信息…",
     "close": "关闭 %{name}",
     "drop": "松开以打开文件",

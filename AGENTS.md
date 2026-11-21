@@ -4,7 +4,7 @@
 
 ## 项目目标
 
-Rowglide 是使用 Rust、GPUI 和 gpui-kit 构建的桌面 Parquet / CSV 查看器。核心体验是快速浏览表格、展开嵌套单元格、按列排序、筛选和执行基础 SQL。
+Rowglide 是使用 Rust、GPUI 和 gpui-kit 构建的桌面 Parquet 查看器。核心体验是快速浏览表格、展开嵌套单元格、按列排序、筛选和执行基础 SQL。
 
 开发路线与阶段验收保存在本地 `dev.md`（已在 `.gitignore` 中忽略，不纳入版本管理）。已接入 DuckDB 真实后端，模拟后端保留用于测试。不要引入第二个真实查询引擎。
 
@@ -32,7 +32,7 @@ rowglide-app ----------------> rowglide-core
 ## 数据与交互约定
 
 - 保留类型信息，优先以 Arrow schema / RecordBatch 表达表格结果；不要将整个数据集转换为字符串矩阵。
-- 区分源文件信息、查询结果和当前视图状态。CSV 的 JSON 字符串不是原生嵌套类型，JSON 查看须保留原文。
+- 区分源文件信息、查询结果和当前视图状态。文本列中的 JSON 字符串不是原生嵌套类型，JSON 查看须保留原文。
 - 嵌套查看支持列表、结构体和键值映射；Arrow dictionary encoding 不等同于键值映射。
 - UI 颜色通过 `ActiveTheme` / `cx.theme()` 读取 gpui-kit 语义 token；不要在 `rowglide-ui` 中硬编码颜色。主题跟随窗口系统外观，通过 `Window::observe_window_appearance` 更新，不维护独立 dark 状态或轮询系统主题。
 - 表格和长列表使用虚拟化；数据加载与缓存也必须有界，不能只优化绘制。

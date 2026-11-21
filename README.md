@@ -90,7 +90,7 @@ sh scripts/bundle-macos.sh
 open target/Rowglide.app
 ```
 
-Use **Open files…** to select local `.parquet`, `.pq`, or `.csv` files. Files open
+Use **Open files…** to select local Parquet files (`.parquet` or `.pq`). Files open
 in folder tabs with independent Browse and SQL sessions. Browse supports text
 Quick Search across text columns, typed Filters, scalar sorting, Limit and Offset. SQL supports a
 single SELECT/WITH query against `current_file`, including aggregates and joins.
@@ -229,9 +229,7 @@ a 512 MB DuckDB memory limit, and a private temporary spill directory capped at
 serializes query engines. Cancellation interrupts DuckDB, and cursor drop joins
 the worker and releases its connection and spill directory.
 
-CSV delimiter/header/type inference uses a bounded sample (20,480 rows). Manual
-CSV options and non-UTF-8 input conversion are not implemented; parsing failures
-are displayed. SQL is validated as one query using sqlparser's DuckDB dialect;
+SQL is validated as one query using sqlparser's DuckDB dialect;
 some DuckDB-specific syntax may not yet be accepted. This is a local SQL viewer,
 not a sandbox for untrusted SQL. Extensions are bundled for Parquet; automatic
 extension downloading is disabled.
@@ -376,7 +374,7 @@ The backend exposes the original schema in bounded pages. Each page retains at
 most 100 records and 8 MiB of Arrow buffers. DuckDB may still parse the full
 footer internally.
 Overview information is captured at opening; detail requests read the current file.
-Files should remain unchanged while open. CSV inspection remains unchanged.
+Files should remain unchanged while open.
 
 Use **File info** in the toolbar to open the right-side panel. **Overview** shows
 opening-time file facts; **Schema** loads detail pages only when selected. The

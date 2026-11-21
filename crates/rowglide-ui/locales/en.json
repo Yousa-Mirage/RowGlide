@@ -4,7 +4,7 @@
     "subtitle": "Explore your data, one file at a time.",
     "start": "GET STARTED",
     "recent": "RECENT FILES",
-    "drop": "Or drop Parquet or CSV files anywhere in this window.",
+    "drop": "Or drop Parquet files anywhere in this window.",
     "no_recent": "Files you open will appear here.",
     "open_recent": "Open %{path}"
   },
@@ -25,9 +25,9 @@
   },
   "files": {
     "changed_tab": "%{name} · Changed",
-    "empty": "Open a Parquet or CSV file",
+    "empty": "Open a Parquet file",
     "open": "Open files…",
-    "prompt": "Open CSV or Parquet files",
+    "prompt": "Open Parquet files",
     "inspecting": "Inspecting files…",
     "close": "Close %{name}",
     "drop": "Drop files to open",
