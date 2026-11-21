@@ -147,3 +147,5 @@
 - 使用 dtolnay/rust-toolchain 安装 Rust 工具链，使用 Swatinem/rust-cache 缓存依赖和编译产物。
 - 从 Actions 页面下载构建产物，归档包含许可证、README 和构建信息；当前不自动创建 GitHub Release。
 - 提供 macOS 本地应用 bundle 脚本；构建产物尚未包含安装程序、应用签名或 macOS 公证。
+
+- Schema type labels use “Struct / 结构体” for Arrow struct fields.

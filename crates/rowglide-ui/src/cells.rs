@@ -150,7 +150,7 @@ pub(crate) fn type_label(data_type: &arrow_schema::DataType) -> SharedString {
         DataType::Map(_, _) => tr!("types.map"),
         DataType::Date32 | DataType::Date64 => tr!("types.date"),
         DataType::Timestamp(_, _) => tr!("types.timestamp"),
-        DataType::Struct(_) => tr!("types.object"),
+        DataType::Struct(_) => tr!("types.struct"),
         _ => tr!("types.value"),
     }
 }

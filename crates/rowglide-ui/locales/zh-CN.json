@@ -143,9 +143,9 @@
     "map": "映射",
     "date": "日期",
     "timestamp": "时间戳",
-    "object": "对象",
     "value": "值",
-    "binary": "二进制"
+    "binary": "二进制",
+    "struct": "结构体"
   },
   "metadata": {
     "name": "列名",

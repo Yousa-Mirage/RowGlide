@@ -143,9 +143,9 @@
     "map": "Map",
     "date": "Date",
     "timestamp": "Timestamp",
-    "object": "Object",
     "value": "Value",
-    "binary": "Binary"
+    "binary": "Binary",
+    "struct": "Struct"
   },
   "metadata": {
     "name": "Column name",
