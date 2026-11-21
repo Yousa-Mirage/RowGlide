@@ -282,6 +282,8 @@ impl TabState {
 /// absent after eviction or before a result exists. `initialized` distinguishes a never-run session
 /// from one requiring explicit reload. Page metadata is meaningful only for Browse.
 pub(super) struct ResultState {
+    /// Visible schema indices retained while this session is inactive; None shows every field.
+    pub(super) visible: Option<Vec<usize>>,
     /// Initial or manually resized column widths, retained across view switches and eviction.
     pub(super) widths: Option<Vec<gpui_kit::Pixels>>,
     /// Inactive result buffers; moved into the shared table while active.
@@ -309,6 +311,7 @@ impl Default for ResultState {
     fn default() -> Self {
         Self {
             widths: None,
+            visible: None,
             preview: None,
             sql_result: None,
             page: None,

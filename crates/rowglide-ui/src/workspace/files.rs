@@ -95,6 +95,8 @@ impl Workspace {
             self.table.update(cx, |table, cx| {
                 table.clear_selection(cx);
                 let grid = table.delegate_mut();
+                grid.visible = None;
+                grid.view_id += 1;
                 grid.widths = None;
                 grid.preview = None;
                 grid.sql_result = None;

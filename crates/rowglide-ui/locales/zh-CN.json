@@ -97,6 +97,11 @@
     "failed": "复制失败：%{error}"
   },
   "table": {
+    "ascending": "升序",
+    "descending": "降序",
+    "copy_name": "复制列名",
+    "hide_column": "隐藏列",
+    "hidden_columns": "已隐藏列（%{count}）",
     "empty_browse": "源文件没有数据行",
     "empty_sql": "没有可显示的 SQL 结果 · 请执行查询",
     "no_result": "尚未加载结果 · 点击应用加载数据页"

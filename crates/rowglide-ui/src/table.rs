@@ -1,5 +1,6 @@
 //! Table adapter for Browse pages, streamed SQL results, sorting and cell copying.
 
+mod headers;
 pub(crate) mod sizing;
 
 use crate::i18n::{tr, tr_string};
@@ -31,6 +32,10 @@ pub(crate) struct SortRequested(pub(crate) Option<Sort>);
 /// The delegate exposes rows, columns and visible-cell summaries to the virtualized
 /// table. Cache misses enqueue bounded background reads without doing file I/O here.
 pub(crate) struct Grid {
+    /// Visible schema indices in source order; None displays every column.
+    pub(crate) visible: Option<Vec<usize>>,
+    /// Changes when a different session or SQL execution takes ownership of the table.
+    pub(crate) view_id: u64,
     /// Context-specific explanation for an empty successful Browse page.
     pub(crate) empty_label: SharedString,
     /// First-batch or manually adjusted widths; None until sizing completes for this session.
@@ -59,6 +64,18 @@ pub(crate) struct GridEvents;
 
 impl EventEmitter<SortRequested> for GridEvents {}
 
+/// Visibility change targeting one schema field in the table session that opened the menu.
+pub(crate) struct ColumnVisibility {
+    /// Identifies the originating view so a stale menu cannot change another tab.
+    pub(crate) view_id: u64,
+    /// Position in the complete Arrow schema.
+    pub(crate) column: usize,
+    /// True restores the column at its original position.
+    pub(crate) show: bool,
+}
+
+impl EventEmitter<ColumnVisibility> for GridEvents {}
+
 impl Grid {
     /// Return the active result schema, including an empty SQL query's schema.
     pub(crate) fn schema(&self) -> Option<SchemaRef> {
@@ -66,6 +83,20 @@ impl Grid {
             .as_ref()
             .and_then(|state| state.schema.clone())
             .or_else(|| self.preview.as_ref().map(|preview| preview.schema.clone()))
+    }
+
+    /// Resolve a display position to the original Arrow field, including after columns are hidden.
+    pub(crate) fn schema_index(&self, display: usize) -> Option<usize> {
+        match &self.visible {
+            Some(columns) => columns.get(display).copied(),
+            None => (display < self.schema()?.fields().len()).then_some(display),
+        }
+    }
+
+    /// Return the original position and field definition for a visible header.
+    fn field(&self, display: usize) -> Option<(usize, arrow_schema::FieldRef)> {
+        let index = self.schema_index(display)?;
+        Some((index, self.schema()?.fields().get(index)?.clone()))
     }
 
     /// Width shared by the fixed row numbers and the horizontal scrollbar's left inset.
@@ -107,9 +138,7 @@ impl Grid {
 
     /// Capture a full typed value, rejecting stale coordinates after a result replacement.
     pub(crate) fn copy_target(&self, row: usize, col: usize) -> Option<CopyTarget> {
-        if col >= self.schema()?.fields().len() {
-            return None;
-        }
+        let col = self.schema_index(col)?;
         if let Some(result) = &self.sql_result {
             (row < self.sql_snapshot.as_ref()?.rows)
                 .then(|| CopyTarget::Sql(result.clone(), row, col))
@@ -126,11 +155,15 @@ impl Grid {
 }
 
 impl TableDelegate for Grid {
-    /// Return the retained result's schema width, or zero before a result exists.
+    /// Return the retained result's visible column count, or zero before a result exists.
     ///
     /// An empty result with a schema still exposes its columns.
     fn columns_count(&self, _: &App) -> usize {
-        self.schema().map_or(0, |schema| schema.fields().len())
+        self.schema().map_or(0, |schema| {
+            self.visible
+                .as_ref()
+                .map_or(schema.fields().len(), Vec::len)
+        })
     }
 
     /// Return the number of retained display rows, never a source or estimated total.
@@ -170,17 +203,13 @@ impl TableDelegate for Grid {
     /// Nested columns and SQL results disable header sorting. An unavailable index gets
     /// a nonselectable placeholder header while results are being replaced.
     fn column(&self, index: usize, _: &App) -> Column {
-        let schema = self.schema();
-        let Some(field) = schema
-            .as_ref()
-            .and_then(|schema| schema.fields().get(index))
-        else {
+        let Some((index, field)) = self.field(index) else {
             return Column::new(format!("unavailable-{index}"), tr!("common.unavailable"))
                 .selectable(false)
                 .movable(false);
         };
 
-        let mut column = Column::new(field.name().clone(), sizing::header(field))
+        let mut column = Column::new(field.name().clone(), sizing::header(&field))
             .width(
                 self.widths
                     .as_ref()
@@ -192,7 +221,7 @@ impl TableDelegate for Grid {
             .movable(false);
 
         // Nested values have no column-header ordering; SQL can extract a scalar.
-        if self.sortable && sizing::sortable(field) {
+        if self.sortable && sizing::sortable(&field) {
             column = column.sort(match self.sort.filter(|sort| sort.column == index) {
                 Some(sort) if sort.descending => ColumnSort::Descending,
                 Some(_) => ColumnSort::Ascending,
@@ -201,6 +230,16 @@ impl TableDelegate for Grid {
         }
 
         column
+    }
+
+    /// Attach the native-style context menu to the name and type shown in the header.
+    fn render_th(
+        &mut self,
+        index: usize,
+        _: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> impl IntoElement {
+        self.header_menu(index, cx)
     }
 
     /// Translate GPUI's column sort state into an engine-independent sort event.
@@ -217,6 +256,9 @@ impl TableDelegate for Grid {
         if !self.sortable {
             return;
         }
+        let Some(column) = self.schema_index(column) else {
+            return;
+        };
         let sort = match sort {
             ColumnSort::Ascending => Some(Sort {
                 column,
@@ -240,7 +282,7 @@ impl TableDelegate for Grid {
 
     /// Render one visible cell using a compact Arrow summary and ellipsis overflow.
     ///
-    /// `row` is relative to the retained page/result and `col` is a schema column index
+    /// `row` is relative to the retained page/result and `col` is a visible column index
     /// supplied by TableState. Missing SQL rows show a loading label; `null` summaries use
     /// the muted color. Each menu retains its original typed target. Rendering performs
     /// no synchronous backend or disk access.
@@ -251,9 +293,12 @@ impl TableDelegate for Grid {
         _: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
+        let Some(source) = self.schema_index(col) else {
+            return div().into_any_element();
+        };
         let value = self
             .row(row)
-            .map(|(b, r)| cells::summary(b.column(col), r))
+            .map(|(b, r)| cells::summary(b.column(source), r))
             .unwrap_or_else(|| {
                 if self.sql_result.is_some() {
                     tr_string!("common.loading")
@@ -279,6 +324,7 @@ impl TableDelegate for Grid {
             .text_ellipsis()
             .child(value)
             .context_menu(move |menu, _, _| copy_menu(menu, target.clone(), events.clone()))
+            .into_any_element()
     }
 
     /// Return the same compact summary used by the visible cell as a shared label.
@@ -287,6 +333,7 @@ impl TableDelegate for Grid {
     /// by TableState and must be within the result schema. Text can be truncated by
     /// `cells::summary`; this is not a full-value serialization.
     fn cell_label(&self, row: usize, col: usize, _: &App) -> Option<SharedString> {
+        let col = self.schema_index(col)?;
         self.row(row)
             .map(|(b, r)| cells::summary(b.column(col), r).into())
     }

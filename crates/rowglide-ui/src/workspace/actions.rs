@@ -230,6 +230,9 @@ impl Workspace {
         {
             return;
         }
+        let Some(col) = self.table.read(cx).delegate().schema_index(col) else {
+            return;
+        };
         self.close_file_info(cx);
         self.selected = self
             .table

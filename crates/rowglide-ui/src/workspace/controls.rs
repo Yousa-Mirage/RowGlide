@@ -7,6 +7,7 @@ use gpui_kit::component::{
     ActiveTheme, Disableable, IconName, Sizable,
     button::{Button, ButtonVariants},
     input::{Editor, Input},
+    menu::{DropdownMenu, PopupMenuItem},
     tab::{Tab, TabBar},
 };
 use gpui_kit::prelude::FluentBuilder;
@@ -72,6 +73,88 @@ impl Workspace {
                 this.switch_tab(*index, window, cx);
                 this.tabs_focus.focus(window, cx);
             }))
+    }
+
+    /// Remove or restore one display column without changing the query or its Arrow batches.
+    pub(super) fn change_column_visibility(
+        &mut self,
+        event: &crate::table::ColumnVisibility,
+        cx: &mut Context<Self>,
+    ) {
+        let changed = self.table.update(cx, |table, cx| {
+            let grid = table.delegate_mut();
+            let Some(schema) = grid.schema() else {
+                return false;
+            };
+            let count = schema.fields().len();
+            if event.view_id != grid.view_id || event.column >= count {
+                return false;
+            }
+            let columns = grid.visible.get_or_insert_with(|| (0..count).collect());
+            match (columns.binary_search(&event.column), event.show) {
+                (Ok(index), false) => {
+                    columns.remove(index);
+                }
+                (Err(index), true) => columns.insert(index, event.column),
+                _ => return false,
+            }
+            if columns.len() == count {
+                grid.visible = None;
+            }
+            table.clear_selection(cx);
+            table.refresh(cx);
+            cx.notify();
+            true
+        });
+        if changed {
+            self.pending_cell = None;
+            self.selected = None;
+            self.expanded.clear();
+            cx.notify();
+        }
+    }
+
+    /// List only hidden fields; selecting a name restores that column in schema order.
+    fn hidden_columns_button(&self, cx: &Context<Self>) -> Option<impl IntoElement + use<>> {
+        let grid = self.table.read(cx).delegate();
+        let visible = grid.visible.as_ref()?;
+        let schema = grid.schema()?;
+        let count = schema.fields().len().checked_sub(visible.len())?;
+        let view_id = grid.view_id;
+        let table = self.table.clone();
+        Some(
+            Button::new("hidden-columns")
+                .small()
+                .label(tr!("table.hidden_columns", count = count))
+                .dropdown_menu(move |mut menu, _, cx| {
+                    let grid = table.read(cx).delegate();
+                    let Some(visible) = &grid.visible else {
+                        return menu;
+                    };
+                    if grid.view_id != view_id {
+                        return menu;
+                    }
+                    menu = menu.scrollable(true);
+                    for (column, field) in schema.fields().iter().enumerate() {
+                        if visible.binary_search(&column).is_ok() {
+                            continue;
+                        }
+                        let events = grid.events.clone();
+                        menu = menu.item(PopupMenuItem::new(field.name().clone()).on_click(
+                            move |_, _, cx| {
+                                events.update(cx, |_, cx| {
+                                    cx.emit(crate::table::ColumnVisibility {
+                                        view_id,
+                                        column,
+                                        show: true,
+                                    })
+                                });
+                            },
+                        ));
+                    }
+                    menu
+                }),
+        )
     }
 
     /// Build the compact Browse filter, Limit/Offset, Apply/Reset and SQL toggle row.
@@ -156,6 +239,7 @@ impl Workspace {
                         this.run(window, cx);
                     })),
             )
+            .children(self.hidden_columns_button(cx))
             .child(div().flex_1())
             .when(self.active_tab().source.parquet.is_some(), |toolbar| {
                 toolbar.child(

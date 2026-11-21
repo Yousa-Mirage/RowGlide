@@ -179,6 +179,8 @@ impl Workspace {
                 Grid {
                     empty_label: tr!("table.empty_browse"),
                     widths: None,
+                    visible: None,
+                    view_id: 0,
                     preview: None,
                     sql_result: None,
                     sql_snapshot: None,
@@ -232,16 +234,33 @@ impl Workspace {
                     this.run(window, cx);
                 },
             ),
+            cx.subscribe(
+                &events,
+                |this, _, event: &crate::table::ColumnVisibility, cx| {
+                    this.change_column_visibility(event, cx)
+                },
+            ),
             cx.subscribe(&table, |this, table, event, cx| {
                 if this.tabs.is_empty() {
                     return;
                 }
                 if let TableEvent::ColumnWidthsChanged(widths) = event {
                     this.sizing_task = None;
-                    this.active_tab_mut().result_mut().widths = Some(widths.clone());
-                    table.update(cx, |table, _| {
-                        table.delegate_mut().widths = Some(widths.clone())
+                    let full = table.update(cx, |table, _| {
+                        let grid = table.delegate_mut();
+                        let count = grid.schema()?.fields().len();
+                        let mut full = grid.widths.take().unwrap_or_else(|| vec![px(150.); count]);
+                        for (index, width) in widths.iter().enumerate() {
+                            if let Some(slot) =
+                                grid.schema_index(index).and_then(|i| full.get_mut(i))
+                            {
+                                *slot = *width;
+                            }
+                        }
+                        grid.widths = Some(full.clone());
+                        Some(full)
                     });
+                    this.active_tab_mut().result_mut().widths = full;
                 }
                 if let TableEvent::DoubleClickedCell(row, col) = event {
                     this.inspect_cell(*row, *col, cx);

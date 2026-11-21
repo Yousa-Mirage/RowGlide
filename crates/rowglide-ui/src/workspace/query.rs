@@ -200,12 +200,12 @@ impl Workspace {
         self.generation += 1;
 
         self.sizing_task = None;
-        if self.sql_open {
-            self.active_tab_mut().result_mut().widths = None;
-        }
-        let widths = self.active_tab_mut().result_mut().widths.clone();
-        self.active_tab_mut().result_mut().initialized = true;
-        self.active_tab_mut().result_mut().page = None;
+        // SQL may return a completely different schema on each execution.
+        let result = self.active_tab_mut().result_mut();
+        result.widths = None;
+        result.visible = None;
+        result.initialized = true;
+        result.page = None;
         self.busy = true;
         self.error = false;
         self.status = tr_string!("query.loading");
@@ -215,7 +215,9 @@ impl Workspace {
 
         self.table.update(cx, |table, cx| {
             table.clear_selection(cx);
-            table.delegate_mut().widths = widths;
+            table.delegate_mut().visible = None;
+            table.delegate_mut().view_id += 1;
+            table.delegate_mut().widths = None;
             table.delegate_mut().loading = true;
             table.delegate_mut().preview = None;
             table.delegate_mut().sql_result = None;
@@ -396,6 +398,9 @@ impl Workspace {
     /// buffers move out of the shared table rather than being copied.
     pub(super) fn save_session(&mut self, cx: &mut Context<Self>) {
         self.sizing_task = None;
+        let visible = self
+            .table
+            .update(cx, |table, _| table.delegate_mut().visible.take());
         let widths = self.table.read(cx).delegate().widths.clone();
         self.pending_cell = None;
         if self.busy {
@@ -420,6 +425,7 @@ impl Workspace {
         tab.drafts = drafts;
         tab.sql = sql;
         let result = tab.result_mut();
+        result.visible = visible;
         result.widths = widths;
         result.preview = preview;
         result.sql_result = sql_result;
@@ -444,6 +450,7 @@ impl Workspace {
         self.sync_controls_from_tab(window, cx);
         let result = self.active_tab_mut().result_mut();
         let initial = !result.initialized;
+        let visible = result.visible.take();
         let widths = result.widths.clone();
         let preview = result.preview.take();
         let sql_result = result.sql_result.take();
@@ -459,6 +466,8 @@ impl Workspace {
         let empty_label = self.browse_empty_label(&self.query);
         self.table.update(cx, |table, cx| {
             let grid = table.delegate_mut();
+            grid.visible = visible;
+            grid.view_id += 1;
             grid.widths = widths;
             grid.empty_label = empty_label;
             grid.preview = preview;

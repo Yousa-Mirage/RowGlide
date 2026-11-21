@@ -608,3 +608,97 @@ async fn browse_completion_preserves_new_drafts(cx: &mut TestAppContext) {
     .await;
     assert!(outcome.is_ok(), "{outcome:?}");
 }
+
+/// Hiding every field keeps restoration available; inspecting a restored field uses its Arrow index.
+#[gpui_kit::test]
+fn restore_hidden_columns_in_schema_order(cx: &mut TestAppContext) {
+    use crate::table::ColumnVisibility;
+    let outcome = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let (handle, view) = fixture(cx)?;
+        cx.update_window(handle, |_, window, cx| {
+            let grid = view.read(cx).table.read(cx).delegate();
+            let schema = grid.schema().ok_or("missing preview schema")?;
+            let view_id = grid.view_id;
+            view.update(cx, |view, cx| {
+                for column in 0..schema.fields().len() {
+                    view.change_column_visibility(
+                        &ColumnVisibility {
+                            view_id,
+                            column,
+                            show: false,
+                        },
+                        cx,
+                    );
+                }
+            });
+            window.render_frame(cx);
+            assert!(window.find("hidden-columns").visible());
+            assert!(
+                view.read(cx)
+                    .table
+                    .read(cx)
+                    .delegate()
+                    .copy_target(0, 0)
+                    .is_none()
+            );
+            view.update(cx, |view, cx| {
+                view.change_column_visibility(
+                    &ColumnVisibility {
+                        view_id,
+                        column: 1,
+                        show: true,
+                    },
+                    cx,
+                );
+                view.inspect_cell(0, 0, cx);
+                assert_eq!(
+                    view.selected.as_ref().map(|value| &value.0),
+                    Some(schema.field(1).name())
+                );
+                view.change_column_visibility(
+                    &ColumnVisibility {
+                        view_id,
+                        column: 0,
+                        show: true,
+                    },
+                    cx,
+                );
+                let grid = view.table.read(cx).delegate();
+                assert_eq!(grid.visible.as_deref(), Some([0, 1].as_slice()));
+            });
+            Ok::<_, Box<dyn std::error::Error>>(())
+        })??;
+        Ok(())
+    })();
+    assert!(outcome.is_ok(), "{outcome:?}");
+}
+
+/// A right click on a real table header exposes both directions and the field actions.
+#[gpui_kit::test]
+async fn right_click_header_opens_field_menu(cx: &mut TestAppContext) {
+    use gpui_kit::test::{TestAppContextExt, TestQueryExt};
+    let outcome = async {
+        let (handle, _) = fixture(cx)?;
+        cx.update_window(handle, |_, window, cx| {
+            window.render_frame(cx);
+            window.right_click(("col-header", 0usize), cx);
+        })?;
+        cx.wait_for(handle, std::time::Duration::from_secs(1), |window, _| {
+            window.try_find("popup-menu").is_some()
+        })
+        .await;
+        cx.update_window(handle, |_, window, _| {
+            for key in [
+                "table.ascending",
+                "table.descending",
+                "table.copy_name",
+                "table.hide_column",
+            ] {
+                assert!(window.find_by_label(&crate::i18n::tr!(key)).visible());
+            }
+        })?;
+        Ok::<(), Box<dyn std::error::Error>>(())
+    }
+    .await;
+    assert!(outcome.is_ok(), "{outcome:?}");
+}
