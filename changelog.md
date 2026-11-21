@@ -151,3 +151,4 @@
 - Schema type labels use “Struct / 结构体” for Arrow struct fields.
 - 类型标签区分 Int、UInt、Float、Decimal 和 Bool；无符号整数在中文中显示为“非负整数”。
 - Schema 详情增加固定的页内行号栏；详情表始终使用完整的 Schema 列集合，不受正文隐藏列影响。
+- 单元格检查器在详细值下方增加浅灰分隔线，并提供并排的“复制值”和“复制为 JSON”按钮。

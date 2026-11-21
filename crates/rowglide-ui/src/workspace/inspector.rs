@@ -4,7 +4,7 @@ use crate::i18n::tr;
 
 use super::{ResizePanel, Workspace};
 use crate::cells;
-use crate::clipboard::{CopyTarget, copy_menu};
+use crate::clipboard::{CopyRequested, CopyTarget, copy_menu};
 use arrow_array::ArrayRef;
 use gpui_kit::component::{
     ActiveTheme, IconName, Sizable,
@@ -29,6 +29,12 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let border = cx.theme().border;
+        let events = self.table.read(cx).delegate().events.clone();
+        let target = CopyTarget::Cell(array.clone(), row);
+        let copy_value_events = events.clone();
+        let copy_value_target = target.clone();
+        let copy_json_events = events;
+        let copy_json_target = target;
         div()
             .relative()
             .w(self.inspector_width)
@@ -79,6 +85,44 @@ impl Workspace {
                     .min_h_0()
                     .overflow_y_scroll()
                     .child(self.tree(name, array, row, "value".into(), 0, cx)),
+            )
+            // Keep copy actions below the complete value tree so they remain available
+            // after expanding nested lists, structs or maps.
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .border_t_1()
+                    .border_color(cx.theme().border)
+                    .px_3()
+                    .py_2()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        Button::new("copy-inspected-value")
+                            .small()
+                            .label(tr!("copy.value"))
+                            .on_click(move |_, _, cx| {
+                                copy_value_events.update(cx, |_, cx| {
+                                    cx.emit(CopyRequested::Cell {
+                                        target: copy_value_target.clone(),
+                                        format: rowglide_core::CopyFormat::Value,
+                                    });
+                                });
+                            }),
+                    )
+                    .child(
+                        Button::new("copy-inspected-json")
+                            .small()
+                            .label(tr!("copy.json"))
+                            .on_click(move |_, _, cx| {
+                                copy_json_events.update(cx, |_, cx| {
+                                    cx.emit(CopyRequested::Cell {
+                                        target: copy_json_target.clone(),
+                                        format: rowglide_core::CopyFormat::Json,
+                                    });
+                                });
+                            }),
+                    ),
             )
             .child(
                 resize_handle("inspector-divider", Axis::Horizontal)
