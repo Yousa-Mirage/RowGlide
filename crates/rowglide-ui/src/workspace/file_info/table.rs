@@ -5,6 +5,7 @@ use crate::{cells, i18n::tr};
 use arrow_schema::DataType;
 use gpui_kit::component::{
     ActiveTheme,
+    menu::{ContextMenuExt, PopupMenuItem},
     table::{Column, TableDelegate, TableState},
 };
 use gpui_kit::*;
@@ -172,7 +173,7 @@ impl TableDelegate for MetadataGrid {
         self.loading
     }
 
-    /// Format only virtualized visible cells; metadata does not trigger queries during rendering.
+    /// Show a bounded label and offer the full, unindented value of the right-clicked cell.
     fn render_td(
         &mut self,
         row: usize,
@@ -180,12 +181,30 @@ impl TableDelegate for MetadataGrid {
         _: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
+        let table = cx.weak_entity();
         div()
+            .id(("schema-cell", row * 3 + col))
+            .size_full()
+            .flex()
+            .items_center()
             .text_xs()
             .text_color(cx.theme().foreground)
             .overflow_hidden()
             .text_ellipsis()
             .child(self.label(row, col))
+            .context_menu(move |menu, _, cx| {
+                let Some(value) = table
+                    .upgrade()
+                    .and_then(|t| t.read(cx).delegate().value(row, col))
+                else {
+                    return menu;
+                };
+                menu.item(
+                    PopupMenuItem::new(tr!("copy.value")).on_click(move |_, _, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(value.clone()));
+                    }),
+                )
+            })
     }
 
     /// Return the full logical value for keyboard and accessibility navigation.
