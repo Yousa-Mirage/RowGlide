@@ -397,7 +397,11 @@ impl TableDelegate for Grid {
             .context_menu(move |menu, _, cx| {
                 let rectangle = table.upgrade().and_then(|table| {
                     let grid = table.read(cx).delegate();
-                    grid.cell_range.filter(|r| r.includes(row, col))?;
+                    if !grid.header_columns.contains(&source)
+                        && !grid.cell_range.is_some_and(|r| r.includes(row, col))
+                    {
+                        return None;
+                    }
                     RangeCopy::capture(grid, cx)
                 });
                 if let Some(range) = rectangle {

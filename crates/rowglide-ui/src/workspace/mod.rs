@@ -248,11 +248,15 @@ impl Workspace {
                 if this.tabs.is_empty() {
                     return;
                 }
-                if matches!(
-                    event,
-                    TableEvent::SelectCell(..) | TableEvent::RightClickedCell(..)
-                ) && table.read(cx).delegate().header_anchor.is_some()
-                {
+                let grid = table.read(cx).delegate();
+                let leave_headers = match event {
+                    TableEvent::SelectCell(..) => true,
+                    TableEvent::RightClickedCell(_, display) => !grid
+                        .schema_index(*display)
+                        .is_some_and(|column| grid.header_columns.contains(&column)),
+                    _ => false,
+                };
+                if leave_headers && grid.header_anchor.is_some() {
                     table.update(cx, |table, cx| {
                         table.delegate_mut().clear_headers();
                         cx.notify();

@@ -1,7 +1,10 @@
 //! Actions on the original field represented by a visible column header.
 
 use super::{ColumnVisibility, Grid, SortRequested, sizing};
-use crate::i18n::tr;
+use crate::{
+    clipboard::{range::RangeCopy, range_menu},
+    i18n::tr,
+};
 use gpui_kit::component::{
     ActiveTheme,
     menu::{ContextMenuExt, PopupMenuItem},
@@ -80,7 +83,7 @@ impl Grid {
                 let Some(entity) = table.upgrade() else {
                     return menu;
                 };
-                let Some((columns, schema)) = entity.update(cx, |state, cx| {
+                let Some((columns, schema, data)) = entity.update(cx, |state, cx| {
                     let grid = state.delegate_mut();
                     if grid.view_id != view_id || grid.schema_index(display) != Some(column) {
                         return None;
@@ -91,7 +94,11 @@ impl Grid {
                         state.clear_selection(cx);
                     }
                     let grid = state.delegate();
-                    Some((grid.header_columns.clone(), grid.schema()?))
+                    Some((
+                        grid.header_columns.clone(),
+                        grid.schema()?,
+                        RangeCopy::capture(grid, cx),
+                    ))
                 }) else {
                     return menu;
                 };
@@ -120,6 +127,9 @@ impl Grid {
                         );
                     }
                     menu = menu.separator();
+                }
+                if let Some(data) = data {
+                    menu = range_menu(menu, data, events.clone()).separator();
                 }
                 let name = columns
                     .iter()

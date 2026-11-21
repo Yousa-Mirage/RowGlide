@@ -689,6 +689,8 @@ async fn right_click_header_opens_field_menu(cx: &mut TestAppContext) {
         .await;
         cx.update_window(handle, |_, window, _| {
             for key in [
+                "copy.table",
+                "copy.json",
                 "table.ascending",
                 "table.descending",
                 "table.copy_name",
@@ -741,6 +743,49 @@ async fn multiselect_header_actions(cx: &mut TestAppContext) {
                 [0, 2].into()
             );
         })?;
+        // Right-clicking a data cell in a selected column keeps both nonadjacent columns.
+        cx.update_window(handle, |_, window, cx| {
+            window.right_click("table-cell-0:2", cx)
+        })?;
+        cx.wait_for(handle, std::time::Duration::from_secs(1), |window, _| {
+            window.try_find_by_label(&tr!("copy.json")).is_some()
+        })
+        .await;
+        let rows = cx.update_window(handle, |_, window, cx| {
+            let point = window.find_by_label(&tr!("copy.json")).bounds().center();
+            window.pointer_move(point, None, cx);
+            window.pointer_down(point, MouseButton::Left, cx);
+            window.pointer_up(point, MouseButton::Left, cx);
+            view.read(cx)
+                .table
+                .read(cx)
+                .delegate()
+                .preview
+                .as_ref()
+                .map_or(0, |preview| preview.rows)
+        })?;
+        cx.wait_for(handle, std::time::Duration::from_secs(3), |_, cx| {
+            cx.read_from_clipboard()
+                .and_then(|item| item.text())
+                .is_some_and(|text| text.starts_with("{\"id\":"))
+        })
+        .await;
+        cx.update_window(
+            handle,
+            |_, _, cx| -> Result<(), Box<dyn std::error::Error>> {
+                let text = cx
+                    .read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .ok_or("missing selection")?;
+                let data: serde_json::Value = serde_json::from_str(&text)?;
+                assert_eq!(data.as_object().map(|map| map.len()), Some(2));
+                assert_eq!(data["id"].as_array().map(Vec::len), Some(rows));
+                assert_eq!(data["city"].as_array().map(Vec::len), Some(rows));
+                assert_eq!(data["id"][0], 10001);
+                assert_eq!(data["city"][0], "Shanghai");
+                Ok(())
+            },
+        )??;
         for action in [tr!("table.copy_names"), tr!("table.hide_columns")] {
             cx.update_window(handle, |_, window, cx| {
                 window.right_click(("col-header", 0usize), cx)

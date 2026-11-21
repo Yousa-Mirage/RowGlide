@@ -67,18 +67,29 @@ impl RangeCopy {
 
     /// Capture field identities and buffers only when a copy action or menu is requested.
     pub(crate) fn capture(grid: &Grid, cx: &App) -> Option<Arc<Self>> {
-        let range = grid.cell_range?;
-        let rows = range.rows();
-        if range.anchor == range.end || *rows.end() >= grid.rows_count(cx) {
-            return None;
-        }
         let schema = grid.schema()?;
-        let fields = range
-            .columns()
-            .map(|display| {
-                let index = grid.schema_index(display)?;
-                Some((index, schema.fields().get(index)?.name().clone()))
-            })
+        let total = grid.rows_count(cx);
+        let (rows, indices) = if grid.header_columns.is_empty() {
+            let range = grid.cell_range?;
+            let rows = range.rows();
+            if range.anchor == range.end || *rows.end() >= total {
+                return None;
+            }
+            let indices = range
+                .columns()
+                .map(|display| grid.schema_index(display))
+                .collect::<Option<Vec<_>>>()?;
+            (rows, indices)
+        } else {
+            // Freeze the row count now: later SQL batches belong to a later selection snapshot.
+            (
+                0..=total.checked_sub(1)?,
+                grid.header_columns.iter().copied().collect(),
+            )
+        };
+        let fields = indices
+            .into_iter()
+            .map(|index| Some((index, schema.fields().get(index)?.name().clone())))
             .collect::<Option<Vec<_>>>()?;
         if let Some(sql) = &grid.sql_result {
             return Some(Arc::new(Self::sql(sql.clone(), fields, rows)));
