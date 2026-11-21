@@ -149,3 +149,4 @@
 - 提供 macOS 本地应用 bundle 脚本；构建产物尚未包含安装程序、应用签名或 macOS 公证。
 
 - Schema type labels use “Struct / 结构体” for Arrow struct fields.
+- 类型标签区分 Int、UInt、Float、Decimal 和 Bool；无符号整数在中文中显示为“非负整数”。

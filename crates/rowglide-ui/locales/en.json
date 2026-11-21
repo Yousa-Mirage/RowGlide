@@ -136,16 +136,18 @@
   },
   "types": {
     "text": "Text",
-    "integer": "Integer",
+    "integer": "Int",
     "decimal": "Decimal",
-    "boolean": "Boolean",
+    "boolean": "Bool",
     "list": "List",
     "map": "Map",
     "date": "Date",
     "timestamp": "Timestamp",
     "value": "Value",
     "binary": "Binary",
-    "struct": "Struct"
+    "struct": "Struct",
+    "unsigned_integer": "UInt",
+    "float": "Float"
   },
   "metadata": {
     "name": "Column name",

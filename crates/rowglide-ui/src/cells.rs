@@ -124,18 +124,14 @@ pub(crate) fn type_label(data_type: &arrow_schema::DataType) -> SharedString {
 
     match data_type {
         DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => tr!("types.text"),
-        DataType::Int8
-        | DataType::Int16
-        | DataType::Int32
-        | DataType::Int64
-        | DataType::UInt8
-        | DataType::UInt16
-        | DataType::UInt32
-        | DataType::UInt64 => tr!("types.integer"),
-        DataType::Float16
-        | DataType::Float32
-        | DataType::Float64
-        | DataType::Decimal32(_, _)
+        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+            tr!("types.integer")
+        }
+        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+            tr!("types.unsigned_integer")
+        }
+        DataType::Float16 | DataType::Float32 | DataType::Float64 => tr!("types.float"),
+        DataType::Decimal32(_, _)
         | DataType::Decimal64(_, _)
         | DataType::Decimal128(_, _)
         | DataType::Decimal256(_, _) => tr!("types.decimal"),
