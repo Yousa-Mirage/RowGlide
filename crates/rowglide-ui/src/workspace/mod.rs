@@ -24,6 +24,7 @@ use state::{TabMode, TabState};
 
 use crate::table::{Grid, GridEvents, SortRequested};
 use arrow_array::ArrayRef;
+use gpui_kit::base::{Scrollbar, ScrollbarMode};
 use gpui_kit::component::{
     ActiveTheme, Sizable,
     input::{EditorState, InputState},
@@ -440,6 +441,10 @@ impl Render for Workspace {
             }
         }
 
+        let table = self.table.read(cx);
+        let gutter = table.delegate().gutter_width(cx);
+        let horizontal_scroll = table.horizontal_scroll_handle.clone();
+
         // The table fills the remaining space beside the optional inspector.
         let mut body = div()
             .flex_1()
@@ -458,15 +463,35 @@ impl Render for Workspace {
                 }),
             )
             .child(
-                self.keyboard_grid(cx).flex_1().min_w_0().h_full().child(
-                    DataTable::new(&self.table)
-                        .accessibility_label(tr!("a11y.data_table"))
-                        // Stop at the first and last row without exposing overscroll space.
-                        .scroll_bounce(false)
-                        .stripe(false)
-                        .bordered(false)
-                        .small(),
-                ),
+                self.keyboard_grid(cx)
+                    .relative()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .child(
+                        DataTable::new(&self.table)
+                            .accessibility_label(tr!("a11y.data_table"))
+                            .scrollbar_visible(true, false)
+                            // Stop at the first and last row without exposing overscroll space.
+                            .scroll_bounce(false)
+                            .stripe(false)
+                            .bordered(false)
+                            .small(),
+                    )
+                    .child(
+                        // The handle supplies the overflow range; only the horizontal bar stays visible.
+                        div()
+                            .absolute()
+                            .left(gutter)
+                            .right_0()
+                            .bottom_0()
+                            .h(Scrollbar::width())
+                            .child(
+                                Scrollbar::horizontal(&horizontal_scroll)
+                                    .viewport_from_layout()
+                                    .mode(ScrollbarMode::Always),
+                            ),
+                    ),
             );
         if self.active_tab().info.open && self.active_tab().source.parquet.is_some() {
             body = body.child(self.render_file_info(cx));

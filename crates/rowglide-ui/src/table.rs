@@ -68,12 +68,17 @@ impl Grid {
             .or_else(|| self.preview.as_ref().map(|preview| preview.schema.clone()))
     }
 
+    /// Width shared by the fixed row numbers and the horizontal scrollbar's left inset.
+    pub(crate) fn gutter_width(&self, cx: &App) -> Pixels {
+        let digits = self.rows_count(cx).max(1).ilog10() + 1;
+        px(20. + 9. * digits.max(2) as f32)
+    }
+
     /// Build a fixed-width gutter outside the horizontally scrolling data cells.
     /// Size both header and body from the retained row count, including streamed SQL rows.
     fn number_gutter(&self, label: SharedString, cx: &App) -> Div {
-        let digits = self.rows_count(cx).max(1).ilog10() + 1;
         div()
-            .w(px(20. + 9. * digits.max(2) as f32))
+            .w(self.gutter_width(cx))
             .h_full()
             .flex_shrink_0()
             .flex()
