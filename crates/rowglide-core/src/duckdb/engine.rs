@@ -310,9 +310,8 @@ impl Backend for DuckDbBackend {
     fn parquet_metadata(
         &self,
         source: usize,
-        request: crate::ParquetRequest,
         cancel: Cancellation,
-    ) -> Result<crate::ParquetPage, QueryError> {
+    ) -> Result<Vec<crate::SchemaRow>, QueryError> {
         cancel.check()?;
         let file = self
             .registry()?
@@ -326,7 +325,7 @@ impl Backend for DuckDbBackend {
         }
         let _guard = lock_engine(&self.gate, &cancel)?;
         file.ensure_current()?;
-        let result = parquet::page(&file.path, request, &cancel);
+        let result = parquet::schema(&file.path, &cancel);
         cancel.check()?;
         file.ensure_current()?;
         result

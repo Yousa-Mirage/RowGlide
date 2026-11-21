@@ -52,9 +52,6 @@
     "schema_hint": "Indented names are child fields. A ? after a list element type means the element can be null.",
     "loading": "Loading details…",
     "wait": "May wait for the current data query.",
-    "preview": "Selected value · preview",
-    "copy": "Copy full value",
-    "empty": "0 entries",
     "format": "Format",
     "size": "File size",
     "rows": "Rows",
@@ -63,7 +60,6 @@
     "creator": "Created by",
     "unknown": "Unknown",
     "no_entries": "No detail rows",
-    "entries": "Entries %{start}–%{end}",
     "source_counts": "Source %{rows} rows · %{columns} columns",
     "not_recorded": "Not recorded"
   },

@@ -170,15 +170,14 @@ pub trait Backend: Send + Sync {
         ))
     }
 
-    /// Read one page of Parquet footer details on a background worker.
+    /// Read the complete logical Parquet schema on a background worker.
     /// Does not modify Browse/SQL state. Unsupported backends return an explicit error;
     /// implementations must honor cancellation and bound retained metadata buffers.
     fn parquet_metadata(
         &self,
         _source: usize,
-        _request: crate::ParquetRequest,
         _cancel: Cancellation,
-    ) -> Result<crate::ParquetPage, QueryError> {
+    ) -> Result<Vec<crate::SchemaRow>, QueryError> {
         Err(QueryError::Invalid(
             "Parquet metadata is unavailable for this source".into(),
         ))

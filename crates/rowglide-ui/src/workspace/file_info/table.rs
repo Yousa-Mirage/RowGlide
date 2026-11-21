@@ -8,28 +8,28 @@ use gpui_kit::component::{
     table::{Column, TableDelegate, TableState},
 };
 use gpui_kit::*;
-use rowglide_core::ParquetPage;
+use rowglide_core::SchemaRow;
 
-/// Retains only the visible schema page, with original field types and nullability.
+/// Retains the complete logical schema, with original field types and nullability.
 #[derive(Default)]
 pub(super) struct MetadataGrid {
-    /// Current page, cleared before loading another section, source or offset.
-    pub(super) page: Option<ParquetPage>,
+    /// Logical fields in display order, cleared when switching source or section.
+    pub(super) rows: Vec<SchemaRow>,
     /// Loading is separate from the main data table's query lifecycle.
     pub(super) loading: bool,
 }
 
 impl MetadataGrid {
-    /// Measure the fixed row-number gutter from the largest row on the current page.
+    /// Measure the fixed row-number gutter from the largest row on the schema.
     fn gutter_width(&self) -> Pixels {
         let rows = self.rows_count_without_app().max(1);
         let digits = rows.ilog10() + 1;
         px(20. + 9. * digits.max(2) as f32)
     }
 
-    /// Read the current page row count without requiring a GPUI application handle.
+    /// Read the schema row count without requiring a GPUI application handle.
     fn rows_count_without_app(&self) -> usize {
-        self.page.as_ref().map_or(0, |page| page.rows.len())
+        self.rows.len()
     }
 
     /// Render the fixed gutter used by both the schema header and its body rows.
@@ -50,13 +50,14 @@ impl MetadataGrid {
             .child(label)
     }
 
-    /// Measure bounded page previews and the header using the UI font.
+    /// Measure up to 100 field previews and the header using the UI font.
     /// Widths are computed on table refresh, not on each rendered cell. Multiline
     /// values use their widest line; the column separately caps excessive widths.
     fn content_width(&self, column: usize, cx: &App) -> Pixels {
         let header = header(column);
         let labels = std::iter::once(std::borrow::Cow::Borrowed(header.as_str())).chain(
-            (0..self.rows_count(cx)).map(|row| std::borrow::Cow::Owned(self.label(row, column))),
+            (0..self.rows.len().min(100))
+                .map(|row| std::borrow::Cow::Owned(self.label(row, column))),
         );
         let text_system = WindowTextSystem::new(cx.text_system().clone());
         let mut width = px(0.);
@@ -81,9 +82,9 @@ impl MetadataGrid {
         width
     }
 
-    /// Return the displayed value without indentation for previews and clipboard copies.
-    pub(super) fn value(&self, row: usize, column: usize) -> Option<String> {
-        let field = &self.page.as_ref()?.rows.get(row)?.field;
+    /// Return the displayed value without indentation for display and accessibility.
+    fn value(&self, row: usize, column: usize) -> Option<String> {
+        let field = &self.rows.get(row)?.field;
         Some(match column {
             0 => field.name().clone(),
             1 => detailed_type(field.data_type()),
@@ -98,7 +99,7 @@ impl MetadataGrid {
         let value = self.value(row, column).unwrap_or_default();
         let mut text = limited_text(&value, Some(160));
         if column == 0
-            && let Some(field) = self.page.as_ref().and_then(|p| p.rows.get(row))
+            && let Some(field) = self.rows.get(row)
         {
             text.insert_str(0, &"    ".repeat(field.depth));
         }
@@ -114,10 +115,10 @@ impl TableDelegate for MetadataGrid {
 
     /// Expose only retained metadata records, never source-data rows.
     fn rows_count(&self, _: &App) -> usize {
-        self.page.as_ref().map_or(0, |page| page.rows.len())
+        self.rows.len()
     }
 
-    /// Keep page-local row numbers fixed while the three schema columns scroll or resize.
+    /// Keep row numbers fixed while the three schema columns scroll or resize.
     fn render_header(
         &mut self,
         _: &mut Window,
@@ -128,7 +129,7 @@ impl TableDelegate for MetadataGrid {
             .child(self.number_gutter("#".into(), cx))
     }
 
-    /// Add a fixed page-local row number before the logical schema fields.
+    /// Add a fixed row number before the logical schema fields.
     fn render_tr(
         &mut self,
         row: usize,
@@ -145,7 +146,7 @@ impl TableDelegate for MetadataGrid {
             .child(self.number_gutter(label, cx))
     }
 
-    /// Fit headers and current-page previews within readable width bounds.
+    /// Fit headers and sampled values within readable width bounds.
     /// Wide relations remain horizontally scrollable; backend order defines pagination.
     fn column(&self, index: usize, cx: &App) -> Column {
         Column::new(format!("metadata-{index}"), header(index))
@@ -155,7 +156,7 @@ impl TableDelegate for MetadataGrid {
             .movable(false)
     }
 
-    /// Refit a manually resized column on double-click, including the retained page only.
+    /// Refit a manually resized column on double-click, including the first 100 fields.
     /// The table adds cell padding and applies the column's minimum and maximum width.
     fn fit_column(
         &mut self,

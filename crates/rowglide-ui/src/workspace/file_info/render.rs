@@ -1,12 +1,12 @@
-//! Compact file summary and paged metadata presentation beside the data table.
+//! Compact file summary and logical schema presentation beside the data table.
 
 use crate::i18n::tr;
 
 use super::{Workspace, table::limited_text};
 use crate::workspace::ResizePanel;
 use gpui_kit::component::{
-    ActiveTheme, Disableable, Sizable,
-    button::{Button, ButtonVariants},
+    ActiveTheme, Sizable,
+    button::Button,
     resizable::{HandleEdge, resize_handle},
     tab::{Tab, TabBar},
     table::DataTable,
@@ -176,86 +176,7 @@ impl Workspace {
                     ),
             );
         }
-        if let Some((row, col)) = self.file_info.selected
-            && let Some(value) = grid.value(row, col)
-        {
-            let text = limited_text(&value, Some(2000));
-            panel = panel.child(
-                div()
-                    .border_t_1()
-                    .border_color(cx.theme().border)
-                    .px_4()
-                    .py_2()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .child(div().text_xs().child(tr!("info.preview")))
-                            .child(
-                                Button::new("copy-metadata-value")
-                                    .small()
-                                    .ghost()
-                                    .label(tr!("info.copy"))
-                                    .on_click(
-                                        cx.listener(|this, _, _, cx| this.copy_info_value(cx)),
-                                    ),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .id("metadata-value-scroll")
-                            .h(px(80.))
-                            .overflow_scroll()
-                            .text_xs()
-                            .child(text),
-                    ),
-            );
-        }
-        let offset = self.active_tab().info.offset;
-        let rows = grid.page.as_ref().map_or(0, |page| page.rows.len());
-        let label = if grid.loading {
-            tr!("common.loading")
-        } else if self.file_info.error.is_some() {
-            tr!("common.unavailable")
-        } else if rows == 0 {
-            tr!("info.empty")
-        } else {
-            tr!("info.entries", start = offset + 1, end = offset + rows)
-        };
-        panel
-            .child(
-                div()
-                    .px_3()
-                    .py_1()
-                    .border_t_1()
-                    .border_color(cx.theme().border)
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().flex_1().text_xs().child(label))
-                    .child(
-                        Button::new("metadata-previous")
-                            .small()
-                            .ghost()
-                            .label(tr!("common.previous"))
-                            .disabled(grid.loading || offset == 0)
-                            .on_click(cx.listener(|this, _, _, cx| this.turn_info_page(false, cx))),
-                    )
-                    .child(
-                        Button::new("metadata-next")
-                            .small()
-                            .ghost()
-                            .label(tr!("common.next"))
-                            .disabled(
-                                grid.loading
-                                    || !grid.page.as_ref().is_some_and(|page| page.has_next),
-                            )
-                            .on_click(cx.listener(|this, _, _, cx| this.turn_info_page(true, cx))),
-                    ),
-            )
-            .child(handle)
-            .into_any_element()
+        panel.child(handle).into_any_element()
     }
 
     /// Present opening-time source facts without changing query results or inspecting disk.

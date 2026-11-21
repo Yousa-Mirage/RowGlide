@@ -2,7 +2,7 @@
 
 use arrow_schema::DataType;
 use duckdb::Connection;
-use rowglide_core::{Backend, Cancellation, DuckDbBackend, ParquetRequest, QueryError};
+use rowglide_core::{Backend, Cancellation, DuckDbBackend, QueryError};
 use std::{error::Error, fs};
 
 /// Inspect nested schema and exact footer totals independently of query results.
@@ -19,29 +19,26 @@ fn logical_schema_and_footer_summary() -> Result<(), Box<dyn Error>> {
     assert_eq!(summary.columns, 3);
     assert_eq!(summary.file_bytes, fs::metadata(&path)?.len());
     assert!(summary.created_by.is_some());
-    let schema =
-        backend.parquet_metadata(source.id, ParquetRequest::new(0)?, Cancellation::default())?;
+    let schema = backend.parquet_metadata(source.id, Cancellation::default())?;
     let names = schema
-        .rows
         .iter()
         .map(|row| row.field.name().as_str())
         .collect::<Vec<_>>();
     // List encoding wrappers are absent; genuine struct children remain visible.
     assert_eq!(names, ["id", "items", "root", "list", "element"]);
-    let depths: Vec<_> = schema.rows.iter().map(|r| r.depth).collect();
+    let depths: Vec<_> = schema.iter().map(|r| r.depth).collect();
     assert_eq!(depths, [0, 0, 0, 1, 1]);
-    let DataType::List(element) = schema.rows[1].field.data_type() else {
+    let DataType::List(element) = schema[1].field.data_type() else {
         return Err("Expected a logical list".into());
     };
     assert_eq!(element.data_type(), &DataType::Int64);
     assert!(element.is_nullable());
-    assert!(!schema.has_next);
     Ok(())
 }
 
-/// Page wide file schemas without dropping or duplicating nodes; empty files retain columns.
+/// Load wide file schemas without dropping or duplicating nodes; empty files retain columns.
 #[test]
-fn wide_schema_paging_and_empty_file() -> Result<(), Box<dyn Error>> {
+fn complete_wide_schema_for_empty_file() -> Result<(), Box<dyn Error>> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("wide.parquet");
     let columns = (0..205)
@@ -57,17 +54,8 @@ fn wide_schema_paging_and_empty_file() -> Result<(), Box<dyn Error>> {
     let source = backend.open(&path, Cancellation::default())?;
     assert_eq!(source.rows, Some(0));
     assert_eq!(source.parquet.ok_or("Missing summary")?.columns, 205);
-    let mut names = Vec::new();
-    for offset in [0, 100, 200] {
-        let page = backend.parquet_metadata(
-            source.id,
-            ParquetRequest::new(offset)?,
-            Cancellation::default(),
-        )?;
-        assert_eq!(page.has_next, offset < 200);
-        assert_eq!(page.rows.len(), if offset < 200 { 100 } else { 5 });
-        names.extend(page.rows.into_iter().map(|row| row.field.name().clone()));
-    }
+    let fields = backend.parquet_metadata(source.id, Cancellation::default())?;
+    let names: Vec<_> = fields.iter().map(|row| row.field.name().clone()).collect();
     assert_eq!(names, (0..205).map(|i| format!("c{i}")).collect::<Vec<_>>());
     Ok(())
 }
@@ -84,16 +72,15 @@ fn detail_cancellation_and_errors() -> Result<(), Box<dyn Error>> {
     )?;
     let backend = DuckDbBackend::default();
     let source = backend.open(&path, Cancellation::default())?;
-    let request = ParquetRequest::new(0)?;
     let cancel = Cancellation::default();
     cancel.cancel();
     assert!(matches!(
-        backend.parquet_metadata(source.id, request, cancel),
+        backend.parquet_metadata(source.id, cancel),
         Err(QueryError::Cancelled)
     ));
     assert!(
         backend
-            .parquet_metadata(999, request, Cancellation::default())
+            .parquet_metadata(999, Cancellation::default())
             .is_err()
     );
     let csv = temp.path().join("plain.csv");
@@ -101,16 +88,15 @@ fn detail_cancellation_and_errors() -> Result<(), Box<dyn Error>> {
     let csv = backend.open(&csv, Cancellation::default())?;
     assert!(
         backend
-            .parquet_metadata(csv.id, request, Cancellation::default())
+            .parquet_metadata(csv.id, Cancellation::default())
             .is_err()
     );
     fs::remove_file(path)?;
     assert!(
         backend
-            .parquet_metadata(source.id, request, Cancellation::default())
+            .parquet_metadata(source.id, Cancellation::default())
             .is_err()
     );
-    assert!(ParquetRequest::new(usize::MAX).is_err());
     Ok(())
 }
 
@@ -143,12 +129,11 @@ fn waiting_metadata_cancels_without_cancelling_data_query() -> Result<(), Box<dy
     let cancel = Cancellation::default();
     let worker_cancel = cancel.clone();
     let worker_backend = backend.clone();
-    let request = ParquetRequest::new(0)?;
     let (started, ready) = mpsc::channel();
     let (sender, receiver) = mpsc::channel();
     let worker = thread::spawn(move || {
         let _ = started.send(());
-        let _ = sender.send(worker_backend.parquet_metadata(source.id, request, worker_cancel));
+        let _ = sender.send(worker_backend.parquet_metadata(source.id, worker_cancel));
     });
     ready.recv_timeout(Duration::from_secs(5))?;
     assert!(matches!(
@@ -165,7 +150,7 @@ fn waiting_metadata_cancels_without_cancelling_data_query() -> Result<(), Box<dy
     drop(cursor);
     assert!(
         backend
-            .parquet_metadata(source.id, request, Cancellation::default())
+            .parquet_metadata(source.id, Cancellation::default())
             .is_ok()
     );
     Ok(())
@@ -195,10 +180,9 @@ fn list_nullability_is_independent_of_element_nullability() -> Result<(), Box<dy
     ArrowWriter::try_new(fs::File::create(&path)?, Arc::new(schema), None)?.close()?;
     let backend = DuckDbBackend::default();
     let source = backend.open(&path, Cancellation::default())?;
-    let page =
-        backend.parquet_metadata(source.id, ParquetRequest::new(0)?, Cancellation::default())?;
-    assert_eq!(page.rows.len(), 2);
-    for (row, optional) in page.rows.iter().zip([false, true]) {
+    let page = backend.parquet_metadata(source.id, Cancellation::default())?;
+    assert_eq!(page.len(), 2);
+    for (row, optional) in page.iter().zip([false, true]) {
         assert_eq!(row.field.is_nullable(), optional);
         let DataType::List(element) = row.field.data_type() else {
             return Err("Expected a logical list".into());

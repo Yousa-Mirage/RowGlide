@@ -1,6 +1,8 @@
 //! Parquet view registration, footer summaries and bounded metadata reads via DuckDB.
 
-use crate::{Cancellation, ParquetPage, ParquetRequest, ParquetSummary, QueryError, SchemaRow};
+use std::mem::size_of;
+
+use crate::{Cancellation, ParquetSummary, QueryError, SchemaRow};
 use duckdb::Connection;
 
 /// Bind the already parameterized source path to the connection-local data view.
@@ -35,16 +37,14 @@ pub(super) fn summary(
 
 /// Decode the footer's logical Arrow schema without reading data pages. DuckDB's query
 /// result schema can mark required fields nullable, so it cannot supply this detail.
-pub(super) fn page(
+pub(super) fn schema(
     path: &std::path::Path,
-    request: ParquetRequest,
     cancel: &Cancellation,
-) -> Result<ParquetPage, QueryError> {
+) -> Result<Vec<SchemaRow>, QueryError> {
     use parquet::arrow::arrow_reader::ArrowReaderMetadata;
     let file = std::fs::File::open(path)?;
     let metadata = ArrowReaderMetadata::load(&file, Default::default())?;
     let mut rows = Vec::new();
-    let mut skip = request.offset();
     let mut bytes = 0_usize;
     let mut levels = vec![metadata.schema().fields().iter()];
     while let Some(level) = levels.last_mut() {
@@ -53,34 +53,25 @@ pub(super) fn page(
             levels.pop();
             continue;
         };
-        if skip > 0 {
-            skip -= 1;
-        } else {
-            if rows.len() == ParquetRequest::PAGE_SIZE {
-                return Ok(ParquetPage {
-                    rows,
-                    has_next: true,
-                });
-            }
+        // Field::size includes descendants. Account each shared field tree only once.
+        if levels.len() == 1 {
             bytes = bytes.saturating_add(field.size());
-            if bytes > 8 * 1024 * 1024 {
-                return Err(QueryError::Invalid(
-                    "Parquet schema page exceeds the 8 MiB memory budget".into(),
-                ));
-            }
-            rows.push(SchemaRow {
-                field: field.clone(),
-                depth: levels.len() - 1,
-            });
         }
+        bytes = bytes.saturating_add(size_of::<SchemaRow>());
+        if bytes > 8 * 1024 * 1024 {
+            return Err(QueryError::Invalid(
+                "Parquet schema exceeds the 8 MiB memory budget".into(),
+            ));
+        }
+        rows.push(SchemaRow {
+            field: field.clone(),
+            depth: levels.len() - 1,
+        });
         if let Some(children) = named_children(field.data_type()) {
             levels.push(children.iter());
         }
     }
-    Ok(ParquetPage {
-        rows,
-        has_next: false,
-    })
+    Ok(rows)
 }
 
 /// Descend through element and map-entry wrappers until genuine named children are found.

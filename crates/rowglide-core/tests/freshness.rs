@@ -1,9 +1,7 @@
 //! Real-file freshness checks and explicit reload behavior.
 
 use duckdb::Connection;
-use rowglide_core::{
-    Backend, Cancellation, DuckDbBackend, ParquetRequest, Preview, Query, QueryError,
-};
+use rowglide_core::{Backend, Cancellation, DuckDbBackend, Preview, Query, QueryError};
 use std::{error::Error, fs, path::Path};
 
 /// Write a small Parquet fixture via a bound destination path.
@@ -39,7 +37,7 @@ fn changed_parquet_requires_reload() -> Result<(), Box<dyn Error>> {
         Err(QueryError::SourceChanged)
     ));
     assert!(matches!(
-        backend.parquet_metadata(source.id, ParquetRequest::new(0)?, Cancellation::default()),
+        backend.parquet_metadata(source.id, Cancellation::default()),
         Err(QueryError::SourceChanged)
     ));
     let reloaded = backend.reload(source.id, Cancellation::default())?;

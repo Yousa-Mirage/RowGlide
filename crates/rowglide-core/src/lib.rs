@@ -10,7 +10,7 @@ mod mock;
 mod model;
 mod pagination;
 mod parquet;
-pub use parquet::{ParquetPage, ParquetRequest, ParquetSummary, SchemaRow};
+pub use parquet::{ParquetSummary, SchemaRow};
 mod temporary;
 
 pub use temporary::cleanup_temporary_storage;

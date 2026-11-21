@@ -52,9 +52,6 @@
     "schema_hint": "缩进表示子字段。列表元素类型后的 ? 表示元素可为空。",
     "loading": "正在加载详情…",
     "wait": "可能需要等待当前数据查询完成。",
-    "preview": "选中值 · 预览",
-    "copy": "复制完整值",
-    "empty": "0 条记录",
     "format": "格式",
     "size": "文件大小",
     "rows": "行数",
@@ -63,7 +60,6 @@
     "creator": "创建工具",
     "unknown": "未知",
     "no_entries": "没有详情行",
-    "entries": "记录 %{start}–%{end}",
     "source_counts": "源文件 %{rows} 行 · %{columns} 列",
     "not_recorded": "未记录"
   },
