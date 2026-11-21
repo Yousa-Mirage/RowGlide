@@ -858,7 +858,12 @@ async fn rectangular_cell_copy(cx: &mut TestAppContext) {
                         cx,
                     );
                 }
-                let range = view.read(cx).table.read(cx).delegate().cell_range;
+                let table = view.read(cx).table.read(cx);
+                assert_eq!(
+                    table.selected_cell(),
+                    Some(if drag { (1, 1) } else { (0, 0) })
+                );
+                let range = table.delegate().cell_range;
                 assert!(
                     range.is_some_and(|r| r.includes(0, 1) && r.includes(1, 0)),
                     "drag={drag}"

@@ -36,6 +36,8 @@ pub(crate) struct SortRequested(pub(crate) Option<Sort>);
 /// The delegate exposes rows, columns and visible-cell summaries to the virtualized
 /// table. Cache misses enqueue bounded background reads without doing file I/O here.
 pub(crate) struct Grid {
+    /// Row of the native cell selection, used when no pointer range takes precedence.
+    pub(crate) active_cell_row: Option<usize>,
     /// Display coordinates of the current pointer selection, scoped to this result and layout.
     pub(crate) cell_range: Option<CellRange>,
     /// True between a left press on a data cell and its release.
@@ -201,19 +203,37 @@ impl TableDelegate for Grid {
         div().id("header").child(self.number_gutter("#".into(), cx))
     }
 
-    /// Number visible rows within this result; leave viewport filler rows unnumbered.
+    /// Number real rows and gently emphasize the hover tint on rows touched by the selection.
     fn render_tr(
         &mut self,
         row: usize,
         _: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> Stateful<Div> {
-        let label = if row < self.rows_count(cx) {
+        let real = row < self.rows_count(cx);
+        let highlighted = real
+            && (!self.header_columns.is_empty()
+                || self
+                    .cell_range
+                    .map_or(self.active_cell_row == Some(row), |range| {
+                        range.rows().contains(&row)
+                    }));
+        let label = if real {
             (row + 1).to_string().into()
         } else {
             SharedString::default()
         };
-        div().id(("row", row)).child(self.number_gutter(label, cx))
+        div()
+            .id(("row", row))
+            .when(highlighted, |line| {
+                line.relative().bg(cx.theme().tokens.table_hover).child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .bg(cx.theme().foreground.opacity(0.025)),
+                )
+            })
+            .child(self.number_gutter(label, cx))
     }
 
     /// Build one header from its schema name, compact type label and current sort.
@@ -335,14 +355,21 @@ impl TableDelegate for Grid {
         let table = cx.weak_entity();
         let selected = self
             .cell_range
-            .is_some_and(|range| range.includes(row, col));
+            .is_some_and(|range| range.anchor != (row, col) && range.includes(row, col));
 
+        // Fill the positioned table cell, including its padding; inset only the text.
+        let padding = component::Size::Small.table_cell_padding();
         div()
             .id(SharedString::from(format!("cell-{row}-{col}")))
-            .size_full()
+            .absolute()
+            .inset_0()
+            .pl(padding.left)
+            .pr(padding.right)
+            .pt(padding.top)
+            .pb(padding.bottom)
             .text_sm()
             .when(selected || self.header_columns.contains(&source), |cell| {
-                cell.bg(cx.theme().table_active)
+                cell.bg(cx.theme().tokens.table_active)
             })
             .text_color(color)
             .overflow_hidden()
@@ -362,6 +389,9 @@ impl TableDelegate for Grid {
                     } else {
                         point
                     };
+                    if table.selected_cell() != Some(anchor) {
+                        table.set_selected_cell(anchor.0, anchor.1, cx);
+                    }
                     let grid = table.delegate_mut();
                     grid.clear_headers();
                     grid.cell_range = Some(CellRange { anchor, end: point });
@@ -383,6 +413,18 @@ impl TableDelegate for Grid {
                     }
                 }),
             )
+            // The parent normally selects the clicked cell on release. An extension moves
+            // only the range endpoint; ordinary clicks still use its double-click handling.
+            .on_click(cx.listener(|table, click: &ClickEvent, _, cx| {
+                if click.modifiers().shift
+                    || table
+                        .delegate()
+                        .cell_range
+                        .is_some_and(|range| range.anchor != range.end)
+                {
+                    cx.stop_propagation();
+                }
+            }))
             .on_mouse_move(cx.listener(move |table, event: &MouseMoveEvent, _, cx| {
                 let grid = table.delegate_mut();
                 if grid.dragging_cells

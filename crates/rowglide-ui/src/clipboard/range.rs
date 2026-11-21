@@ -18,7 +18,7 @@ pub(crate) struct CellRange {
 
 impl CellRange {
     /// Row bounds in top-to-bottom result order.
-    fn rows(self) -> RangeInclusive<usize> {
+    pub(crate) fn rows(self) -> RangeInclusive<usize> {
         self.anchor.0.min(self.end.0)..=self.anchor.0.max(self.end.0)
     }
 

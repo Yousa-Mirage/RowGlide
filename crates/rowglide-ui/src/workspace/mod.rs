@@ -184,6 +184,7 @@ impl Workspace {
                     header_columns: Default::default(),
                     header_anchor: None,
                     cell_range: None,
+                    active_cell_row: None,
                     dragging_cells: false,
                     preview: None,
                     sql_result: None,
@@ -247,6 +248,18 @@ impl Workspace {
             cx.subscribe(&table, |this, table, event, cx| {
                 if this.tabs.is_empty() {
                     return;
+                }
+                if matches!(
+                    event,
+                    TableEvent::SelectCell(..) | TableEvent::ClearSelection
+                ) {
+                    let row = table.read(cx).selected_cell().map(|(row, _)| row);
+                    if table.read(cx).delegate().active_cell_row != row {
+                        table.update(cx, |table, cx| {
+                            table.delegate_mut().active_cell_row = row;
+                            cx.notify();
+                        });
+                    }
                 }
                 let grid = table.read(cx).delegate();
                 let leave_headers = match event {

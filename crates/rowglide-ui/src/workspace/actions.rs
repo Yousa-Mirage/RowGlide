@@ -176,12 +176,9 @@ impl Workspace {
         if !self.table.focus_handle(cx).is_focused(window) {
             return;
         }
-        if let Some(range) = self.table.read(cx).delegate().cell_range {
+        if self.table.read(cx).delegate().cell_range.is_some() {
             self.table.update(cx, |table, cx| {
                 table.delegate_mut().clear_cell_range();
-                if table.selected_cell() != Some(range.end) {
-                    table.set_selected_cell(range.end.0, range.end.1, cx);
-                }
                 cx.notify();
             });
         }

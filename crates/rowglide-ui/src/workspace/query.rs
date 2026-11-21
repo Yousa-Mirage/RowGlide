@@ -468,6 +468,7 @@ impl Workspace {
         let sort = if sortable { self.query.sort } else { None };
         let empty_label = self.browse_empty_label(&self.query);
         self.table.update(cx, |table, cx| {
+            table.clear_selection(cx);
             let grid = table.delegate_mut();
             grid.clear_cell_range();
             grid.visible = visible;
