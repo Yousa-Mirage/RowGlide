@@ -26,6 +26,18 @@ fn logical_schema_and_footer_summary() -> Result<(), Box<dyn Error>> {
         .collect::<Vec<_>>();
     // List encoding wrappers are absent; genuine struct children remain visible.
     assert_eq!(names, ["id", "items", "root", "list", "element"]);
+    let original: Vec<_> = schema.iter().map(|r| r.original_type.as_deref()).collect();
+    assert_eq!(
+        original,
+        [
+            "INT64 (INT_64)",
+            "GROUP (LIST)",
+            "GROUP (LIST)",
+            "INT64 (INT_64)",
+            "INT64 (INT_64)"
+        ]
+        .map(Some)
+    );
     let depths: Vec<_> = schema.iter().map(|r| r.depth).collect();
     assert_eq!(depths, [0, 0, 0, 1, 1]);
     let DataType::List(element) = schema[1].field.data_type() else {
@@ -189,5 +201,66 @@ fn list_nullability_is_independent_of_element_nullability() -> Result<(), Box<dy
         };
         assert_eq!(element.is_nullable(), !optional);
     }
+    Ok(())
+}
+
+/// Distinct logical types can share the same physical integer width; annotated
+/// and fixed-length fields retain the footer parameters even in a file with no rows.
+#[test]
+fn original_types_include_map_children() -> Result<(), Box<dyn Error>> {
+    use arrow_schema::{Field, Schema};
+    use parquet::arrow::ArrowWriter;
+    use std::sync::Arc;
+
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("types.parquet");
+    let fields = [
+        ("i", DataType::Int32),
+        ("u", DataType::UInt16),
+        ("s", DataType::Utf8),
+        ("d", DataType::Decimal128(9, 2)),
+        ("bytes", DataType::FixedSizeBinary(5)),
+        (
+            "map",
+            DataType::Map(
+                Field::new(
+                    "entries",
+                    DataType::Struct(
+                        vec![
+                            Field::new("key", DataType::Utf8, false),
+                            Field::new("value", DataType::Int64, true),
+                        ]
+                        .into(),
+                    ),
+                    false,
+                )
+                .into(),
+                false,
+            ),
+        ),
+    ];
+    let schema = Schema::new(fields.map(|(name, ty)| Field::new(name, ty, true)).to_vec());
+    ArrowWriter::try_new(fs::File::create(&path)?, Arc::new(schema), None)?.close()?;
+    let backend = DuckDbBackend::default();
+    let source = backend.open(&path, Cancellation::default())?;
+    let rows = backend.parquet_metadata(source.id, Cancellation::default())?;
+    let labels: Vec<_> = rows
+        .iter()
+        .map(|row| row.original_type.as_deref())
+        .collect();
+    assert_eq!(
+        labels,
+        [
+            "INT32",
+            "INT32 (INTEGER(16,false))",
+            "BYTE_ARRAY (STRING)",
+            "INT32 (DECIMAL(9,2))",
+            "FIXED_LEN_BYTE_ARRAY(5)",
+            "GROUP (MAP)",
+            "BYTE_ARRAY (STRING)",
+            "INT64"
+        ]
+        .map(Some)
+    );
     Ok(())
 }

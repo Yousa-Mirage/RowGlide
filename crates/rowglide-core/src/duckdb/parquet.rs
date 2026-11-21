@@ -1,5 +1,7 @@
 //! Parquet view registration, footer summaries and bounded metadata reads via DuckDB.
 
+mod original;
+
 use std::mem::size_of;
 
 use crate::{Cancellation, ParquetSummary, QueryError, SchemaRow};
@@ -46,13 +48,21 @@ pub(super) fn schema(
     let metadata = ArrowReaderMetadata::load(&file, Default::default())?;
     let mut rows = Vec::new();
     let mut bytes = 0_usize;
-    let mut levels = vec![metadata.schema().fields().iter()];
-    while let Some(level) = levels.last_mut() {
+    let root = metadata.parquet_schema().root_schema();
+    let mut levels = vec![(metadata.schema().fields().iter(), root.get_fields().iter())];
+    while let Some((fields, nodes)) = levels.last_mut() {
         cancel.check()?;
-        let Some(field) = level.next() else {
+        let Some(field) = fields.next() else {
             levels.pop();
             continue;
         };
+        // Unprojected empty groups can be absent from Arrow. Match within this parent only.
+        let node = nodes
+            .clone()
+            .position(|n| n.name() == field.name())
+            .and_then(|index| nodes.nth(index));
+        let original_type = node.map(|n| original::label(n));
+        bytes = bytes.saturating_add(original_type.as_ref().map_or(0, String::capacity));
         // Field::size includes descendants. Account each shared field tree only once.
         if levels.len() == 1 {
             bytes = bytes.saturating_add(field.size());
@@ -65,10 +75,12 @@ pub(super) fn schema(
         }
         rows.push(SchemaRow {
             field: field.clone(),
+            original_type,
             depth: levels.len() - 1,
         });
         if let Some(children) = named_children(field.data_type()) {
-            levels.push(children.iter());
+            let nodes = node.map_or(&[][..], |n| original::named_fields(n));
+            levels.push((children.iter(), nodes.iter()));
         }
     }
     Ok(rows)

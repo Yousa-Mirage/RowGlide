@@ -11,6 +11,9 @@ use gpui_kit::component::{
 use gpui_kit::*;
 use rowglide_core::SchemaRow;
 
+/// Number of data columns, excluding the fixed row-number gutter.
+const SCHEMA_COLUMNS: usize = 4;
+
 /// Retains the complete logical schema, with original field types and nullability.
 #[derive(Default)]
 pub(super) struct MetadataGrid {
@@ -85,12 +88,17 @@ impl MetadataGrid {
 
     /// Return the displayed value without indentation for display and accessibility.
     fn value(&self, row: usize, column: usize) -> Option<String> {
-        let field = &self.rows.get(row)?.field;
+        let row = self.rows.get(row)?;
+        let field = &row.field;
         Some(match column {
             0 => field.name().clone(),
             1 => detailed_type(field.data_type()),
-            2 if field.is_nullable() => tr!("metadata.yes").to_string(),
-            2 => tr!("metadata.no").to_string(),
+            2 => row
+                .original_type
+                .clone()
+                .unwrap_or_else(|| tr!("common.unavailable").to_string()),
+            3 if field.is_nullable() => tr!("metadata.yes").to_string(),
+            3 => tr!("metadata.no").to_string(),
             _ => return None,
         })
     }
@@ -111,7 +119,7 @@ impl MetadataGrid {
 impl TableDelegate for MetadataGrid {
     /// Expose the page schema even when the metadata relation contains no records.
     fn columns_count(&self, _: &App) -> usize {
-        3
+        SCHEMA_COLUMNS
     }
 
     /// Expose only retained metadata records, never source-data rows.
@@ -119,7 +127,7 @@ impl TableDelegate for MetadataGrid {
         self.rows.len()
     }
 
-    /// Keep row numbers fixed while the three schema columns scroll or resize.
+    /// Keep row numbers fixed while the schema columns scroll or resize.
     fn render_header(
         &mut self,
         _: &mut Window,
@@ -183,7 +191,7 @@ impl TableDelegate for MetadataGrid {
     ) -> impl IntoElement {
         let table = cx.weak_entity();
         div()
-            .id(("schema-cell", row * 3 + col))
+            .id(("schema-cell", row * SCHEMA_COLUMNS + col))
             .size_full()
             .flex()
             .items_center()
@@ -234,7 +242,8 @@ fn header(column: usize) -> SharedString {
     match column {
         0 => tr!("metadata.name"),
         1 => tr!("metadata.data_type"),
-        2 => tr!("metadata.nullable"),
+        2 => tr!("metadata.original_type"),
+        3 => tr!("metadata.nullable"),
         _ => SharedString::default(),
     }
 }

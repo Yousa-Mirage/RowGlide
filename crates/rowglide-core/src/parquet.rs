@@ -20,6 +20,8 @@ pub struct ParquetSummary {
 pub struct SchemaRow {
     /// Original field, including its declared nullability and nested element types.
     pub field: FieldRef,
+    /// Physical footer type and its annotation, if the logical field has a matching node.
+    pub original_type: Option<String>,
     /// Indentation level; top-level columns start at zero.
     pub depth: usize,
 }

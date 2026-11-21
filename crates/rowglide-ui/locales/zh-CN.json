@@ -148,6 +148,7 @@
   "metadata": {
     "name": "列名",
     "data_type": "数据类型",
+    "original_type": "原始类型",
     "nullable": "可为空",
     "yes": "是",
     "no": "否"

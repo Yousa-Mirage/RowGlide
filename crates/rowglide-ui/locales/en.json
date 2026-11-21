@@ -148,6 +148,7 @@
   "metadata": {
     "name": "Column name",
     "data_type": "Data type",
+    "original_type": "Original type",
     "nullable": "Nullable",
     "yes": "Yes",
     "no": "No"
