@@ -42,6 +42,7 @@ impl MetadataGrid {
             .items_center()
             .justify_end()
             .px_2()
+            .bg(cx.theme().background)
             .border_r_1()
             .border_color(cx.theme().table_row_border)
             .text_xs()
@@ -134,9 +135,14 @@ impl TableDelegate for MetadataGrid {
         _: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> Stateful<Div> {
+        let label = if row < self.rows_count(cx) {
+            (row + 1).to_string().into()
+        } else {
+            SharedString::default()
+        };
         div()
             .id(("metadata-row", row))
-            .child(self.number_gutter((row + 1).to_string().into(), cx))
+            .child(self.number_gutter(label, cx))
     }
 
     /// Fit headers and current-page previews within readable width bounds.

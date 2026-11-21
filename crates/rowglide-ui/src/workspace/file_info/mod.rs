@@ -77,6 +77,8 @@ impl InfoView {
         let table = cx.new(|cx| {
             TableState::new(MetadataGrid::default(), window, cx)
                 .cell_selectable(true)
+                // The delegate draws a fixed number gutter in place of the built-in row header.
+                .row_header(false)
                 .col_movable(false)
         });
         let selection = cx.subscribe(&table, |this, _, event, cx| {
