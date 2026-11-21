@@ -98,6 +98,8 @@
   "table": {
     "ascending": "升序",
     "descending": "降序",
+    "copy_names": "复制所选列名",
+    "hide_columns": "隐藏所选列",
     "copy_name": "复制列名",
     "hide_column": "隐藏列",
     "hidden_columns": "已隐藏列（%{count}）",

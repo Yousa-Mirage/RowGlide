@@ -181,6 +181,8 @@ impl Workspace {
                     widths: None,
                     visible: None,
                     view_id: 0,
+                    header_columns: Default::default(),
+                    header_anchor: None,
                     preview: None,
                     sql_result: None,
                     sql_snapshot: None,
@@ -243,6 +245,16 @@ impl Workspace {
             cx.subscribe(&table, |this, table, event, cx| {
                 if this.tabs.is_empty() {
                     return;
+                }
+                if matches!(
+                    event,
+                    TableEvent::SelectCell(..) | TableEvent::RightClickedCell(..)
+                ) && table.read(cx).delegate().header_anchor.is_some()
+                {
+                    table.update(cx, |table, cx| {
+                        table.delegate_mut().clear_headers();
+                        cx.notify();
+                    });
                 }
                 if let TableEvent::ColumnWidthsChanged(widths) = event {
                     this.sizing_task = None;

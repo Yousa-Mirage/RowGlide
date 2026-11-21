@@ -14,9 +14,10 @@ use gpui_kit::component::{
     menu::ContextMenuExt,
     table::{Column, ColumnSort, TableDelegate, TableState},
 };
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use rowglide_core::{Preview, QueryResult, ResultSnapshot, Sort};
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 /// Column-header event requesting a new global Browse sort.
 ///
@@ -34,6 +35,10 @@ pub(crate) struct SortRequested(pub(crate) Option<Sort>);
 pub(crate) struct Grid {
     /// Visible schema indices in source order; None displays every column.
     pub(crate) visible: Option<Vec<usize>>,
+    /// Selected visible fields in schema order, independent of the selected data cell.
+    pub(crate) header_columns: BTreeSet<usize>,
+    /// Display position of the last ordinary or toggle click, used for Shift ranges.
+    pub(crate) header_anchor: Option<usize>,
     /// Changes when a different session or SQL execution takes ownership of the table.
     pub(crate) view_id: u64,
     /// Context-specific explanation for an empty successful Browse page.
@@ -64,12 +69,12 @@ pub(crate) struct GridEvents;
 
 impl EventEmitter<SortRequested> for GridEvents {}
 
-/// Visibility change targeting one schema field in the table session that opened the menu.
+/// Visibility change targeting schema fields in the table session that opened the menu.
 pub(crate) struct ColumnVisibility {
     /// Identifies the originating view so a stale menu cannot change another tab.
     pub(crate) view_id: u64,
-    /// Position in the complete Arrow schema.
-    pub(crate) column: usize,
+    /// Unique positions in the complete Arrow schema.
+    pub(crate) columns: BTreeSet<usize>,
     /// True restores the column at its original position.
     pub(crate) show: bool,
 }
@@ -319,6 +324,9 @@ impl TableDelegate for Grid {
             .id(SharedString::from(format!("cell-{row}-{col}")))
             .size_full()
             .text_sm()
+            .when(self.header_columns.contains(&source), |cell| {
+                cell.bg(cx.theme().table_active)
+            })
             .text_color(color)
             .overflow_hidden()
             .text_ellipsis()

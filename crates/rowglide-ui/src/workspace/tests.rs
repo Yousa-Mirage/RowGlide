@@ -624,7 +624,7 @@ fn restore_hidden_columns_in_schema_order(cx: &mut TestAppContext) {
                     view.change_column_visibility(
                         &ColumnVisibility {
                             view_id,
-                            column,
+                            columns: [column].into(),
                             show: false,
                         },
                         cx,
@@ -645,7 +645,7 @@ fn restore_hidden_columns_in_schema_order(cx: &mut TestAppContext) {
                 view.change_column_visibility(
                     &ColumnVisibility {
                         view_id,
-                        column: 1,
+                        columns: [1].into(),
                         show: true,
                     },
                     cx,
@@ -658,7 +658,7 @@ fn restore_hidden_columns_in_schema_order(cx: &mut TestAppContext) {
                 view.change_column_visibility(
                     &ColumnVisibility {
                         view_id,
-                        column: 0,
+                        columns: [0].into(),
                         show: true,
                     },
                     cx,
@@ -696,6 +696,79 @@ async fn right_click_header_opens_field_menu(cx: &mut TestAppContext) {
             ] {
                 assert!(window.find_by_label(&crate::i18n::tr!(key)).visible());
             }
+        })?;
+        Ok::<(), Box<dyn std::error::Error>>(())
+    }
+    .await;
+    assert!(outcome.is_ok(), "{outcome:?}");
+}
+
+/// Select backwards, toggle out the middle field, then use both batch menu actions.
+#[gpui_kit::test]
+async fn multiselect_header_actions(cx: &mut TestAppContext) {
+    use crate::i18n::tr;
+    use gpui_kit::{
+        Modifiers, MouseButton,
+        test::{TestAppContextExt, TestEventExt, TestQueryExt},
+    };
+    let outcome = async {
+        let (handle, view) = fixture(cx)?;
+        cx.update_window(handle, |_, window, cx| {
+            window.render_frame(cx);
+            window.click(("col-header", 2usize), cx);
+            window.click_with_modifiers(
+                ("col-header", 0usize),
+                Modifiers {
+                    shift: true,
+                    ..Default::default()
+                },
+                cx,
+            );
+            let grid = view.read(cx).table.read(cx).delegate();
+            assert_eq!(grid.header_columns, [0, 1, 2].into());
+            let mac = cx.platform_info().is_mac();
+            window.click_with_modifiers(
+                ("col-header", 1usize),
+                Modifiers {
+                    platform: mac,
+                    control: !mac,
+                    ..Default::default()
+                },
+                cx,
+            );
+            assert_eq!(
+                view.read(cx).table.read(cx).delegate().header_columns,
+                [0, 2].into()
+            );
+        })?;
+        for action in [tr!("table.copy_names"), tr!("table.hide_columns")] {
+            cx.update_window(handle, |_, window, cx| {
+                window.right_click(("col-header", 0usize), cx)
+            })?;
+            cx.wait_for(handle, std::time::Duration::from_secs(1), |window, _| {
+                window.try_find("popup-menu").is_some()
+            })
+            .await;
+            cx.update_window(handle, |_, window, cx| {
+                assert!(window.try_find_by_label(&tr!("table.ascending")).is_none());
+                assert!(window.try_find_by_label(&tr!("table.descending")).is_none());
+                let point = window.find_by_label(&action).bounds().center();
+                window.pointer_move(point, None, cx);
+                window.pointer_down(point, MouseButton::Left, cx);
+                window.pointer_up(point, MouseButton::Left, cx);
+            })?;
+            cx.run_until_parked();
+        }
+        cx.update_window(handle, |_, _, cx| {
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("id\ncity")
+            );
+            let grid = view.read(cx).table.read(cx).delegate();
+            assert_eq!(grid.schema_index(0), Some(1));
+            assert_eq!(grid.schema_index(1), Some(3));
         })?;
         Ok::<(), Box<dyn std::error::Error>>(())
     }

@@ -268,6 +268,11 @@ impl Workspace {
         } else if self.selected.is_some() || self.pending_cell.is_some() {
             self.selected = None;
             self.pending_cell = None;
+        } else if self.table.read(cx).delegate().header_anchor.is_some() {
+            self.table.update(cx, |table, cx| {
+                table.delegate_mut().clear_headers();
+                cx.notify();
+            });
         } else if !matches!(
             self.table.read(cx).selection(),
             component::table::TableSelection::None

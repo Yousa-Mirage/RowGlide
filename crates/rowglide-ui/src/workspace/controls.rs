@@ -75,7 +75,7 @@ impl Workspace {
             }))
     }
 
-    /// Remove or restore one display column without changing the query or its Arrow batches.
+    /// Remove or restore display columns together without changing the query or its Arrow batches.
     pub(super) fn change_column_visibility(
         &mut self,
         event: &crate::table::ColumnVisibility,
@@ -87,20 +87,22 @@ impl Workspace {
                 return false;
             };
             let count = schema.fields().len();
-            if event.view_id != grid.view_id || event.column >= count {
+            if event.view_id != grid.view_id
+                || event.columns.is_empty()
+                || event.columns.last().is_some_and(|&i| i >= count)
+            {
                 return false;
             }
-            let columns = grid.visible.get_or_insert_with(|| (0..count).collect());
-            match (columns.binary_search(&event.column), event.show) {
-                (Ok(index), false) => {
-                    columns.remove(index);
-                }
-                (Err(index), true) => columns.insert(index, event.column),
-                _ => return false,
+            let mut columns = grid.visible.take().unwrap_or_else(|| (0..count).collect());
+            if event.show {
+                columns.extend(&event.columns);
+                columns.sort_unstable();
+                columns.dedup();
+            } else {
+                columns.retain(|column| !event.columns.contains(column));
             }
-            if columns.len() == count {
-                grid.visible = None;
-            }
+            grid.visible = (columns.len() < count).then_some(columns);
+            grid.clear_headers();
             table.clear_selection(cx);
             table.refresh(cx);
             cx.notify();
@@ -145,7 +147,7 @@ impl Workspace {
                                 events.update(cx, |_, cx| {
                                     cx.emit(crate::table::ColumnVisibility {
                                         view_id,
-                                        column,
+                                        columns: [column].into(),
                                         show: true,
                                     })
                                 });

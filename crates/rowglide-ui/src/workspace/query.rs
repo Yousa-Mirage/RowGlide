@@ -216,6 +216,7 @@ impl Workspace {
         self.table.update(cx, |table, cx| {
             table.clear_selection(cx);
             table.delegate_mut().visible = None;
+            table.delegate_mut().clear_headers();
             table.delegate_mut().view_id += 1;
             table.delegate_mut().widths = None;
             table.delegate_mut().loading = true;
@@ -467,6 +468,7 @@ impl Workspace {
         self.table.update(cx, |table, cx| {
             let grid = table.delegate_mut();
             grid.visible = visible;
+            grid.clear_headers();
             grid.view_id += 1;
             grid.widths = widths;
             grid.empty_label = empty_label;

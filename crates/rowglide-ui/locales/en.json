@@ -98,6 +98,8 @@
   "table": {
     "ascending": "Sort ascending",
     "descending": "Sort descending",
+    "copy_names": "Copy column names",
+    "hide_columns": "Hide selected columns",
     "copy_name": "Copy column name",
     "hide_column": "Hide column",
     "hidden_columns": "Hidden columns (%{count})",

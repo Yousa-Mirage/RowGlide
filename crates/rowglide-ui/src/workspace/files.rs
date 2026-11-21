@@ -96,6 +96,7 @@ impl Workspace {
                 table.clear_selection(cx);
                 let grid = table.delegate_mut();
                 grid.visible = None;
+                grid.clear_headers();
                 grid.view_id += 1;
                 grid.widths = None;
                 grid.preview = None;
