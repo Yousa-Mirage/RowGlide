@@ -44,22 +44,9 @@ impl Workspace {
                 div()
                     .px_4()
                     .py_2()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(self.active_tab().source.name.clone()),
-                    )
-                    .child(
-                        Button::new("close-file-info")
-                            .small()
-                            .ghost()
-                            .label(tr!("common.close"))
-                            .on_click(cx.listener(|this, _, window, cx| this.dismiss(window, cx))),
-                    ),
+                    .text_sm()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(self.active_tab().source.name.clone()),
             )
             .child(
                 TabBar::new("file-info-sections")
