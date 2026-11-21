@@ -20,6 +20,35 @@ pub(super) struct MetadataGrid {
 }
 
 impl MetadataGrid {
+    /// Measure the fixed row-number gutter from the largest row on the current page.
+    fn gutter_width(&self) -> Pixels {
+        let rows = self.rows_count_without_app().max(1);
+        let digits = rows.ilog10() + 1;
+        px(20. + 9. * digits.max(2) as f32)
+    }
+
+    /// Read the current page row count without requiring a GPUI application handle.
+    fn rows_count_without_app(&self) -> usize {
+        self.page.as_ref().map_or(0, |page| page.rows.len())
+    }
+
+    /// Render the fixed gutter used by both the schema header and its body rows.
+    fn number_gutter(&self, label: SharedString, cx: &App) -> Div {
+        div()
+            .w(self.gutter_width())
+            .h_full()
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .justify_end()
+            .px_2()
+            .border_r_1()
+            .border_color(cx.theme().table_row_border)
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child(label)
+    }
+
     /// Measure bounded page previews and the header using the UI font.
     /// Widths are computed on table refresh, not on each rendered cell. Multiline
     /// values use their widest line; the column separately caps excessive widths.
@@ -85,6 +114,29 @@ impl TableDelegate for MetadataGrid {
     /// Expose only retained metadata records, never source-data rows.
     fn rows_count(&self, _: &App) -> usize {
         self.page.as_ref().map_or(0, |page| page.rows.len())
+    }
+
+    /// Keep page-local row numbers fixed while the three schema columns scroll or resize.
+    fn render_header(
+        &mut self,
+        _: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Stateful<Div> {
+        div()
+            .id("metadata-header")
+            .child(self.number_gutter("#".into(), cx))
+    }
+
+    /// Add a fixed page-local row number before the logical schema fields.
+    fn render_tr(
+        &mut self,
+        row: usize,
+        _: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> Stateful<Div> {
+        div()
+            .id(("metadata-row", row))
+            .child(self.number_gutter((row + 1).to_string().into(), cx))
     }
 
     /// Fit headers and current-page previews within readable width bounds.
