@@ -116,7 +116,7 @@ impl Workspace {
         }
     }
 
-    /// List only hidden fields; selecting a name restores that column in schema order.
+    /// Offer to restore all hidden fields or a single named field in schema order.
     fn hidden_columns_button(&self, cx: &Context<Self>) -> Option<impl IntoElement + use<>> {
         let grid = self.table.read(cx).delegate();
         let visible = grid.visible.as_ref()?;
@@ -136,22 +136,30 @@ impl Workspace {
                     if grid.view_id != view_id {
                         return menu;
                     }
-                    menu = menu.scrollable(true);
-                    for (column, field) in schema.fields().iter().enumerate() {
-                        if visible.binary_search(&column).is_ok() {
-                            continue;
-                        }
-                        let events = grid.events.clone();
-                        menu = menu.item(PopupMenuItem::new(field.name().clone()).on_click(
-                            move |_, _, cx| {
+                    let hidden: std::collections::BTreeSet<_> = (0..schema.fields().len())
+                        .filter(|column| visible.binary_search(column).is_err())
+                        .collect();
+                    let restore =
+                        |label: SharedString, columns: std::collections::BTreeSet<usize>| {
+                            let events = grid.events.clone();
+                            PopupMenuItem::new(label).on_click(move |_, _, cx| {
                                 events.update(cx, |_, cx| {
                                     cx.emit(crate::table::ColumnVisibility {
                                         view_id,
-                                        columns: [column].into(),
+                                        columns: columns.clone(),
                                         show: true,
-                                    })
+                                    });
                                 });
-                            },
+                            })
+                        };
+                    menu = menu
+                        .scrollable(true)
+                        .item(restore(tr!("table.show_all_columns"), hidden.clone()))
+                        .separator();
+                    for column in hidden {
+                        menu = menu.item(restore(
+                            schema.field(column).name().clone().into(),
+                            [column].into(),
                         ));
                     }
                     menu

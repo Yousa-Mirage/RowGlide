@@ -102,6 +102,7 @@
     "hide_columns": "Hide selected columns",
     "copy_name": "Copy column name",
     "hide_column": "Hide column",
+    "show_all_columns": "Show all columns",
     "hidden_columns": "Hidden columns (%{count})",
     "empty_browse": "The source contains no rows",
     "empty_sql": "No SQL rows to display · run a query",
