@@ -298,10 +298,7 @@ impl Workspace {
                         .rows
                         .map_or(tr!("info.unknown"), |rows| rows.to_string().into()),
                 ),
-                (
-                    tr!("info.columns"),
-                    tr!("info.fields", count = summary.columns),
-                ),
+                (tr!("info.columns"), summary.columns.to_string().into()),
                 (
                     tr!("info.version"),
                     summary.format_version.to_string().into(),

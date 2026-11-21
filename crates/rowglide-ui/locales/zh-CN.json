@@ -66,7 +66,6 @@
     "no_entries": "没有详情行",
     "cell_missing": "详情单元格已不可用",
     "entries": "记录 %{start}–%{end}",
-    "fields": "%{count} 个顶层字段",
     "source_counts": "源文件 %{rows} 行 · %{columns} 列",
     "not_recorded": "未记录"
   },
