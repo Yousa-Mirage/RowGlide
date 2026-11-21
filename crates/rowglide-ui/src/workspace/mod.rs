@@ -76,6 +76,8 @@ pub(crate) struct Workspace {
     query: Query,
 
     // Persistent GPUI controls and subscriptions.
+    /// Menu bar beneath the native title bar on platforms without a system menu bar.
+    menu_bar: Option<Entity<component::menu::AppMenuBar>>,
     /// Shared virtualized table entity holding the active result buffers.
     table: Entity<TableState<Grid>>,
     /// Stable focus target for opening files, including the empty workspace.
@@ -308,6 +310,7 @@ impl Workspace {
         subscriptions.push(theme::observe_system_theme(window));
 
         let mut this = Self {
+            menu_bar: (!cfg!(target_os = "macos")).then(|| component::menu::AppMenuBar::new(cx)),
             tabs: backend.sources().into_iter().map(TabState::new).collect(),
             recent_files: Vec::new(),
             recent_store,
@@ -428,7 +431,19 @@ impl Render for Workspace {
         let root = self
             .keyboard_root(cx)
             .relative()
-            .on_drop(cx.listener(Self::drop_files));
+            .on_drop(cx.listener(Self::drop_files))
+            .when_some(self.menu_bar.clone(), |root, bar| {
+                root.child(
+                    div()
+                        .h(px(28.))
+                        .flex_shrink_0()
+                        .px_2()
+                        .border_b_1()
+                        .border_color(cx.theme().border)
+                        .bg(cx.theme().tab_bar)
+                        .child(bar),
+                )
+            });
         if self.tabs.is_empty() {
             return root
                 .bg(cx.theme().background)

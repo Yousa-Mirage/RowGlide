@@ -1,5 +1,10 @@
 {
   "_version": 1,
+  "menu": {
+    "file": "File",
+    "quit": "Quit",
+    "help": "Help"
+  },
   "welcome": {
     "subtitle": "Explore your data, one file at a time.",
     "start": "GET STARTED",

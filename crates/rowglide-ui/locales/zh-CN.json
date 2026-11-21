@@ -1,5 +1,10 @@
 {
   "_version": 1,
+  "menu": {
+    "file": "文件",
+    "quit": "退出",
+    "help": "帮助"
+  },
   "welcome": {
     "subtitle": "打开文件，轻松探索数据。",
     "start": "开始使用",

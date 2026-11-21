@@ -8,6 +8,7 @@ rust_i18n::i18n!("locales", fallback = "en");
 mod cells;
 mod clipboard;
 mod i18n;
+mod menu;
 mod table;
 mod theme;
 mod workspace;
@@ -41,6 +42,7 @@ pub fn run(
     application().with_assets(assets::Assets).run(move |cx| {
         init(cx);
         workspace::init(cx);
+        menu::init(cx);
 
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
